@@ -39,7 +39,7 @@ class Account::TradeBuilder
 
     def build_trade
       prefix = type == "sell" ? "Sell " : "Buy "
-      trade_name = prefix + "#{qty.to_i.abs} shares of #{security.ticker}"
+      trade_name = prefix + "#{qty.to_f.round(4).abs} shares of #{security.ticker}"
 
       account.entries.new(
         name: trade_name,
