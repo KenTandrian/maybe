@@ -26,7 +26,7 @@ gem "turbo-rails"
 gem "hotwire_combobox"
 
 # Background Jobs
-gem "sidekiq"
+gem "sidekiq", '~> 7.3.9'
 
 # Error logging
 gem "vernier"
