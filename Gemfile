@@ -26,7 +26,7 @@ gem "turbo-rails"
 gem "hotwire_combobox"
 
 # Background Jobs
-gem "sidekiq", '~> 7.3.9'
+gem "sidekiq", "~> 7.3.9"
 
 # Error logging
 gem "vernier"
@@ -61,6 +61,7 @@ gem "rqrcode", "~> 2.2"
 gem "activerecord-import"
 
 # AI
+gem "google-cloud-ai_platform"
 gem "ruby-openai"
 
 group :development, :test do

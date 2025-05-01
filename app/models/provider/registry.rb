@@ -54,6 +54,14 @@ class Provider::Registry
 
         Provider::Openai.new(access_token)
       end
+
+      def gemini
+        project_id = ENV.fetch("GOOGLE_CLOUD_PROJECT", nil)
+
+        return nil unless project_id.present?
+
+        Provider::Gemini.new(project_id: project_id)
+      end
   end
 
   def initialize(concept)
@@ -83,7 +91,7 @@ class Provider::Registry
       when :securities
         %i[synth]
       when :llm
-        %i[openai]
+        %i[openai gemini]
       else
         %i[synth plaid_us plaid_eu github openai]
       end
