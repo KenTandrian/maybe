@@ -59,6 +59,7 @@ class AccountsTest < ApplicationSystemTestCase
 
   test "can create loan account" do
     assert_account_created "Loan" do
+      fill_in "account[accountable_attributes][initial_balance]", with: 1000
       fill_in "Interest rate", with: 5.25
       select "Fixed", from: "Rate type"
       fill_in "Term (months)", with: 360
@@ -91,7 +92,8 @@ class AccountsTest < ApplicationSystemTestCase
 
       click_button "Create Account"
 
-      within "[data-controller='tabs']" do
+      within_testid("account-sidebar-tabs") do
+        click_on "All"
         find("details", text: Accountable.from_type(accountable_type).display_name).click
         assert_text account_name
       end
@@ -103,8 +105,8 @@ class AccountsTest < ApplicationSystemTestCase
 
       visit account_url(created_account)
 
-      within "header:has(button[data-menu-target='button'])" do
-        find('button[data-menu-target="button"]').click
+      within_testid("account-menu") do
+        find("button").click
         click_on "Edit"
       end
 

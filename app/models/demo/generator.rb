@@ -2,7 +2,7 @@ class Demo::Generator
   COLORS = %w[#e99537 #4da568 #6471eb #db5a54 #df4e92 #c44fe9 #eb5429 #61c9ea #805dee #6ad28a]
 
   # Builds a semi-realistic mirror of what production data might look like
-  def reset_and_clear_data!(family_names)
+  def reset_and_clear_data!(family_names, require_onboarding: false)
     puts "Clearing existing data..."
 
     destroy_everything!
@@ -10,7 +10,7 @@ class Demo::Generator
     puts "Data cleared"
 
     family_names.each_with_index do |family_name, index|
-      create_family_and_user!(family_name, "user#{index == 0 ? "" : index + 1}@maybe.local")
+      create_family_and_user!(family_name, "user#{index == 0 ? "" : index + 1}@maybe.local", require_onboarding: require_onboarding)
     end
 
     puts "Users reset"
@@ -40,7 +40,7 @@ class Demo::Generator
         create_tags!(family)
         create_categories!(family)
         create_merchants!(family)
-
+        create_rules!(family)
         puts "tags, categories, merchants created for #{family_name}"
 
         create_credit_card_account!(family)
@@ -152,7 +152,7 @@ class Demo::Generator
       Security::Price.destroy_all
     end
 
-    def create_family_and_user!(family_name, user_email, data_enrichment_enabled: false, currency: "USD")
+    def create_family_and_user!(family_name, user_email, currency: "USD", require_onboarding: false)
       base_uuid = "d99e3c6e-d513-4452-8f24-dc263f8528c0"
       id = Digest::UUID.uuid_v5(base_uuid, family_name)
 
@@ -160,8 +160,7 @@ class Demo::Generator
         id: id,
         name: family_name,
         currency: currency,
-        stripe_subscription_status: "active",
-        data_enrichment_enabled: data_enrichment_enabled,
+        stripe_subscription_status: require_onboarding ? nil : "active",
         locale: "en",
         country: "US",
         timezone: "America/New_York",
@@ -174,7 +173,7 @@ class Demo::Generator
         last_name: "User",
         role: "admin",
         password: "password",
-        onboarded_at: Time.current
+        onboarded_at: require_onboarding ? nil : Time.current
 
       family.users.create! \
         email: "member_#{user_email}",
@@ -182,7 +181,21 @@ class Demo::Generator
         last_name: "User",
         role: "member",
         password: "password",
-        onboarded_at: Time.current
+        onboarded_at: require_onboarding ? nil : Time.current
+    end
+
+    def create_rules!(family)
+      family.rules.create!(
+        effective_date: 1.year.ago.to_date,
+        active: true,
+        resource_type: "transaction",
+        conditions: [
+          Rule::Condition.new(condition_type: "transaction_merchant", operator: "=", value: "Whole Foods")
+        ],
+        actions: [
+          Rule::Action.new(action_type: "set_transaction_category", value: "Groceries")
+        ]
+      )
     end
 
     def create_tags!(family)
@@ -192,7 +205,7 @@ class Demo::Generator
     end
 
     def create_categories!(family)
-      family.categories.bootstrap_defaults
+      family.categories.bootstrap!
 
       food = family.categories.find_by(name: "Food & Drink")
       family.categories.create!(name: "Restaurants", parent: food, color: COLORS.sample, lucide_icon: "utensils", classification: "expense")
@@ -206,7 +219,7 @@ class Demo::Generator
                    "Uber", "Netflix", "Spotify", "Delta Airlines", "Airbnb", "Sephora" ]
 
       merchants.each do |merchant|
-        family.merchants.create!(name: merchant, color: COLORS.sample)
+        FamilyMerchant.create!(name: merchant, family: family, color: COLORS.sample)
       end
     end
 
@@ -361,7 +374,7 @@ class Demo::Generator
       unknown = Security.find_by(ticker: "UNKNOWN")
 
       # Buy 20 shares of the unknown stock to simulate a stock where we can't fetch security prices
-      account.entries.create! date: 10.days.ago.to_date, amount: 100, currency: "USD", name: "Buy unknown stock", entryable: Account::Trade.new(qty: 20, price: 5, security: unknown, currency: "USD")
+      account.entries.create! date: 10.days.ago.to_date, amount: 100, currency: "USD", name: "Buy unknown stock", entryable: Trade.new(qty: 20, price: 5, security: unknown, currency: "USD")
 
       trades = [
         { security: aapl, qty: 20 }, { security: msft, qty: 10 }, { security: aapl, qty: -5 },
@@ -382,7 +395,7 @@ class Demo::Generator
           amount: qty * price,
           currency: "USD",
           name: name_prefix + "#{qty} shares of #{security.ticker}",
-          entryable: Account::Trade.new(qty: qty, price: price, currency: "USD", security: security)
+          entryable: Trade.new(qty: qty, price: price, currency: "USD", security: security)
       end
     end
 
@@ -450,20 +463,20 @@ class Demo::Generator
       entry_defaults = {
         date: Faker::Number.between(from: 0, to: 730).days.ago.to_date,
         currency: "USD",
-        entryable: Account::Transaction.new(transaction_attributes)
+        entryable: Transaction.new(transaction_attributes)
       }
 
-      Account::Entry.create! entry_defaults.merge(entry_attributes)
+      Entry.create! entry_defaults.merge(entry_attributes)
     end
 
     def create_valuation!(account, date, amount)
-      Account::Entry.create! \
+      Entry.create! \
         account: account,
         date: date,
         amount: amount,
         currency: "USD",
         name: "Balance update",
-        entryable: Account::Valuation.new
+        entryable: Valuation.new
     end
 
     def random_family_record(model, family)

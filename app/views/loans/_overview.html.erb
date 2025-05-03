@@ -2,7 +2,7 @@
 
 <div class="grid grid-cols-3 gap-2">
   <%= summary_card title: t(".original_principal") do %>
-    <%= format_money account.original_balance %>
+    <%= format_money account.loan.original_balance %>
   <% end %>
 
   <%= summary_card title: t(".remaining_principal") do %>
@@ -45,5 +45,10 @@
 </div>
 
 <div class="flex justify-center py-8">
-  <%= link_to "Edit loan details", edit_loan_path(account), class: "btn btn--ghost", data: { turbo_frame: :modal } %>
+  <%= render LinkComponent.new(
+    text: "Edit loan details",
+    variant: "ghost",
+    href: edit_loan_path(account),
+    frame: :modal
+  ) %>
 </div>

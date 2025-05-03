@@ -1,14 +1,14 @@
 class Property < ApplicationRecord
   include Accountable
 
-  SUBTYPES = [
-    [ "Single Family Home", "single_family_home" ],
-    [ "Multi-Family Home", "multi_family_home" ],
-    [ "Condominium", "condominium" ],
-    [ "Townhouse", "townhouse" ],
-    [ "Investment Property", "investment_property" ],
-    [ "Second Home", "second_home" ]
-  ]
+  SUBTYPES = {
+    "single_family_home" => { short: "Single Family Home", long: "Single Family Home" },
+    "multi_family_home" => { short: "Multi-Family Home", long: "Multi-Family Home" },
+    "condominium" => { short: "Condo", long: "Condominium" },
+    "townhouse" => { short: "Townhouse", long: "Townhouse" },
+    "investment_property" => { short: "Investment Property", long: "Investment Property" },
+    "second_home" => { short: "Second Home", long: "Second Home" }
+  }.freeze
 
   has_one :address, as: :addressable, dependent: :destroy
 
@@ -44,6 +44,6 @@ class Property < ApplicationRecord
 
   private
     def first_valuation_amount
-      account.entries.account_valuations.order(:date).first&.amount_money || account.balance_money
+      account.entries.valuations.order(:date).first&.amount_money || account.balance_money
     end
 end

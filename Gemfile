@@ -19,22 +19,25 @@ gem "propshaft"
 gem "tailwindcss-rails"
 gem "lucide-rails", github: "maybe-finance/lucide-rails"
 
-# Hotwire
+# Hotwire + UI
 gem "stimulus-rails"
 gem "turbo-rails"
+gem "view_component"
+gem "lookbook", ">= 2.3.7"
 
 gem "hotwire_combobox"
 
 # Background Jobs
 gem "sidekiq", "~> 7.3.9"
 
-# Error logging
+# Monitoring
 gem "vernier"
 gem "rack-mini-profiler"
 gem "sentry-ruby"
 gem "sentry-rails"
 gem "sentry-sidekiq"
 gem "logtail-rails"
+gem "skylight"
 
 # Active Storage
 gem "aws-sdk-s3", "~> 1.177.0", require: false
@@ -57,7 +60,7 @@ gem "stripe"
 gem "intercom-rails"
 gem "plaid"
 gem "rotp", "~> 6.3"
-gem "rqrcode", "~> 2.2"
+gem "rqrcode", "~> 3.0"
 gem "activerecord-import"
 
 # AI
@@ -80,6 +83,7 @@ group :development do
   gem "web-console"
   gem "faker"
   gem "benchmark-ips"
+  gem "foreman"
 end
 
 group :test do

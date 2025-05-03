@@ -4,30 +4,26 @@
   <% model = chat && chat.persisted? ? [chat, Message.new] : Chat.new %>
 
   <%= form_with model: model,
-                class: "flex flex-col gap-2 bg-white px-2 py-1.5 rounded-lg shadow-border-xs",
+                class: "flex lg:flex-col gap-2 bg-container px-2 py-1.5 rounded-full lg:rounded-lg shadow-border-xs",
                 data: { chat_target: "form" } do |f| %>
 
     <%# In the future, this will be a dropdown with different AI models %>
     <%= f.hidden_field :ai_model, value: "gemini-2.0-flash-001" %>
 
     <%= f.text_area :content, placeholder: "Ask anything ...", value: message_hint,
-                  class: "w-full border-0 focus:ring-0 text-sm resize-none px-1",
+                  class: "w-full border-0 focus:ring-0 text-sm resize-none px-1 bg-transparent",
                   data: { chat_target: "input", action: "input->chat#autoResize keydown->chat#handleInputKeyDown" },
                   rows: 1 %>
 
     <div class="flex items-center justify-between gap-1">
-      <div class="flex items-center gap-1">
+      <div class="items-center gap-1 hidden lg:flex">
         <%# These are disabled for now, but in the future, will all open specific menus with their own context and search %>
         <% ["plus", "command", "at-sign", "mouse-pointer-click"].each do |icon| %>
-          <button type="button" title="Coming soon" class="cursor-not-allowed w-8 h-8 flex justify-center items-center hover:bg-surface-hover rounded-lg">
-            <%= icon(icon, color: "gray") %>
-          </button>
+          <%= icon(icon, as_button: true, disabled: true, class: "cursor-not-allowed", title: "Coming soon") %>
         <% end %>
       </div>
 
-      <button type="submit" class="w-8 h-8 flex justify-center items-center text-secondary hover:bg-surface-hover cursor-pointer rounded-lg">
-        <%= icon("arrow-up") %>
-      </button>
+      <%= icon("arrow-up", as_button: true, type: "submit") %>
     </div>
   <% end %>
 
