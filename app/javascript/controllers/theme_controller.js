@@ -44,8 +44,10 @@ export default class extends Controller {
   setTheme(isDark) {
     if (isDark) {
       document.documentElement.setAttribute("data-theme", "dark");
+      document.documentElement.style.colorScheme = "dark";
     } else {
       document.documentElement.removeAttribute("data-theme");
+      document.documentElement.style.colorScheme = "light";
     }
   }
 
