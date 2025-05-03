@@ -219,6 +219,8 @@ Rails.application.routes.draw do
   get "privacy", to: redirect("https://maybefinance.com/privacy")
   get "terms", to: redirect("https://maybefinance.com/tos")
 
+  post "tasks/:queue_name", to: "tasks#run", as: :tasks
+
   # Defines the root path route ("/")
   root "pages#dashboard"
 end

@@ -28,6 +28,7 @@ gem "lookbook", ">= 2.3.7"
 gem "hotwire_combobox"
 
 # Background Jobs
+gem "google-cloud-tasks"
 gem "sidekiq", "~> 7.3.9"
 
 # Monitoring
