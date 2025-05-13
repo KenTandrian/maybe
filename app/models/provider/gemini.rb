@@ -7,7 +7,7 @@ class Provider::Gemini < Provider
   # Subclass so errors caught in this provider are raised as Provider::Gemini::Error
   Error = Class.new(Provider::Error)
 
-  MODELS = %w[gemini-2.0-flash-001]
+  MODELS = %w[gemini-2.0-flash-lite-001]
 
   def initialize(project_id:, location: "us-central1")
     @client = Google::Cloud::AIPlatform::V1::PredictionService::Client.new
