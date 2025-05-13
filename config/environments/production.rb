@@ -108,5 +108,8 @@ Rails.application.configure do
   # config.host_authorization = { exclude: ->(request) { request.path == "/up" } }
 
   # set REDIS_URL for Sidekiq to use Redis
-  config.active_job.queue_adapter = :sidekiq
+  config.active_job.queue_adapter = :google_cloud_tasks
+
+  # Default URL options for URL helpers
+  Rails.application.routes.default_url_options = { host: ENV["APP_DOMAIN"] }
 end
