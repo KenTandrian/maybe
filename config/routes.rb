@@ -1,4 +1,5 @@
 require "sidekiq/web"
+require "sidekiq/cron/web"
 
 Rails.application.routes.draw do
   # MFA routes
@@ -24,6 +25,8 @@ Rails.application.routes.draw do
 
   get "changelog", to: "pages#changelog"
   get "feedback", to: "pages#feedback"
+
+  resource :current_session, only: %i[update]
 
   resource :registration, only: %i[new create]
   resources :sessions, only: %i[new create destroy]
@@ -54,16 +57,16 @@ Rails.application.routes.draw do
     resource :security, only: :show
   end
 
-  resource :subscription, only: %i[new show] do
+  resource :subscription, only: %i[new show create] do
     collection do
       get :upgrade
       get :success
-      post :start_trial
     end
   end
 
   resources :tags, except: :show do
     resources :deletions, only: %i[new create], module: :tag
+    delete :destroy_all, on: :collection
   end
 
   namespace :category do
@@ -104,10 +107,6 @@ Rails.application.routes.draw do
   end
 
   resources :accounts, only: %i[index new], shallow: true do
-    collection do
-      post :sync_all
-    end
-
     member do
       post :sync
       get :chart

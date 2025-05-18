@@ -15,13 +15,23 @@ class PlaidAccount < ApplicationRecord
 
   class << self
     def find_or_create_from_plaid_data!(plaid_data, family)
-      find_or_create_by!(plaid_id: plaid_data.account_id) do |a|
-        a.account = family.accounts.new(
-          name: plaid_data.name,
-          balance: plaid_data.balances.current || plaid_data.balances.available,
-          currency: plaid_data.balances.iso_currency_code,
-          accountable: TYPE_MAPPING[plaid_data.type].new
-        )
+      PlaidAccount.transaction do
+        plaid_account = find_or_create_by!(plaid_id: plaid_data.account_id)
+
+        internal_account = family.accounts.find_or_initialize_by(plaid_account_id: plaid_account.id)
+
+        # Only set the name for new records or if the name is not locked
+        if internal_account.new_record? || internal_account.enrichable?(:name)
+          internal_account.name = plaid_data.name
+        end
+        internal_account.balance = plaid_data.balances.current || plaid_data.balances.available
+        internal_account.currency = plaid_data.balances.iso_currency_code
+        internal_account.accountable = TYPE_MAPPING[plaid_data.type].new
+
+        internal_account.save!
+        plaid_account.save!
+
+        plaid_account
       end
     end
   end
