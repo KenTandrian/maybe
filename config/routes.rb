@@ -193,7 +193,7 @@ Rails.application.routes.draw do
     end
   end
 
-  resources :plaid_items, only: %i[create destroy] do
+  resources :plaid_items, only: %i[new edit create destroy] do
     member do
       post :sync
     end
@@ -204,6 +204,8 @@ Rails.application.routes.draw do
     post "plaid_eu"
     post "stripe"
   end
+
+  get "redis-configuration-error", to: "pages#redis_configuration_error"
 
   # Reveal health status on /up that returns 200 if the app boots with no exceptions, otherwise 500.
   # Can be used by load balancers and uptime monitors to verify that the app is live.
