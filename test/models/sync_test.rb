@@ -3,6 +3,17 @@ require "test_helper"
 class SyncTest < ActiveSupport::TestCase
   include ActiveJob::TestHelper
 
+  test "does not run if not in a valid state" do
+    syncable = accounts(:depository)
+    sync = Sync.create!(syncable: syncable, status: :completed)
+
+    syncable.expects(:perform_sync).never
+
+    sync.perform
+
+    assert_equal "completed", sync.status
+  end
+
   test "runs successful sync" do
     syncable = accounts(:depository)
     sync = Sync.create!(syncable: syncable)
@@ -172,20 +183,40 @@ class SyncTest < ActiveSupport::TestCase
     stale_pending = Sync.create!(
       syncable: accounts(:depository),
       status: :pending,
-      created_at: 3.hours.ago
+      created_at: 25.hours.ago
     )
 
     stale_syncing = Sync.create!(
       syncable: accounts(:depository),
       status: :syncing,
-      created_at: 3.hours.ago,
-      pending_at: 3.hours.ago,
-      syncing_at: 2.hours.ago
+      created_at: 25.hours.ago,
+      pending_at: 24.hours.ago,
+      syncing_at: 23.hours.ago
     )
 
     Sync.clean
 
     assert_equal "stale", stale_pending.reload.status
     assert_equal "stale", stale_syncing.reload.status
+  end
+
+  test "expand_window_if_needed widens start and end dates on a pending sync" do
+    initial_start = 1.day.ago.to_date
+    initial_end   = 1.day.ago.to_date
+
+    sync = Sync.create!(
+      syncable: accounts(:depository),
+      window_start_date: initial_start,
+      window_end_date: initial_end
+    )
+
+    new_start = 5.days.ago.to_date
+    new_end   = Date.current
+
+    sync.expand_window_if_needed(new_start, new_end)
+    sync.reload
+
+    assert_equal new_start, sync.window_start_date
+    assert_equal new_end,   sync.window_end_date
   end
 end

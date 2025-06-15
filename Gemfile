@@ -24,7 +24,6 @@ gem "stimulus-rails"
 gem "turbo-rails"
 gem "view_component"
 gem "lookbook", ">= 2.3.7"
-
 gem "hotwire_combobox"
 
 # Background Jobs
@@ -39,13 +38,14 @@ gem "sentry-ruby"
 gem "sentry-rails"
 gem "sentry-sidekiq"
 gem "logtail-rails"
-gem "skylight"
+gem "skylight", groups: [ :production ]
 
 # Active Storage
 gem "aws-sdk-s3", "~> 1.177.0", require: false
 gem "image_processing", ">= 1.2"
 
 # Other
+gem "ostruct"
 gem "bcrypt", "~> 3.1"
 gem "jwt"
 gem "faraday"
@@ -82,6 +82,10 @@ group :development, :test do
   gem "dotenv-rails"
 end
 
+if ENV["BENCHMARKING_ENABLED"]
+  gem "dotenv-rails", groups: [ :production ]
+end
+
 group :development do
   gem "hotwire-livereload"
   gem "letter_opener"
@@ -89,6 +93,8 @@ group :development do
   gem "web-console"
   gem "faker"
   gem "benchmark-ips"
+  gem "stackprof"
+  gem "derailed_benchmarks"
   gem "foreman"
 end
 

@@ -1,6 +1,8 @@
 module Security::Provided
   extend ActiveSupport::Concern
 
+  SecurityInfoMissingError = Class.new(StandardError)
+
   class_methods do
     def provider
       registry = Provider::Registry.for_concept(:securities)
@@ -8,9 +10,14 @@ module Security::Provided
     end
 
     def search_provider(symbol, country_code: nil, exchange_operating_mic: nil)
-      return [] if symbol.blank? || symbol.length < 2
+      return [] if provider.nil? || symbol.blank?
 
-      response = provider.search_securities(symbol, country_code: country_code, exchange_operating_mic: exchange_operating_mic)
+      params = {
+        country_code: country_code,
+        exchange_operating_mic: exchange_operating_mic
+      }.compact_blank
+
+      response = provider.search_securities(symbol, **params)
 
       if response.success?
         response.data.map do |provider_security|
@@ -20,6 +27,7 @@ module Security::Provided
             name: provider_security.name,
             logo_url: provider_security.logo_url,
             exchange_operating_mic: provider_security.exchange_operating_mic,
+            country_code: provider_security.country_code
           )
         end
       else
@@ -35,7 +43,11 @@ module Security::Provided
 
     # Make sure we have a data provider before fetching
     return nil unless provider.present?
-    response = provider.fetch_security_price(self, date: date)
+    response = provider.fetch_security_price(
+      symbol: ticker,
+      exchange_operating_mic: exchange_operating_mic,
+      date: date
+    )
 
     return nil unless response.success? # Provider error
 
@@ -70,9 +82,11 @@ module Security::Provided
         logo_url: response.data.logo_url,
       )
     else
-      err = StandardError.new("Failed to fetch security info for #{ticker} from #{provider.class.name}: #{response.error.message}")
-      Rails.logger.warn(err.message)
-      Sentry.capture_exception(err, level: :warning)
+      Rails.logger.warn("Failed to fetch security info for #{ticker} from #{provider.class.name}: #{response.error.message}")
+      Sentry.capture_exception(SecurityInfoMissingError.new("Failed to get security info"), level: :warning) do |scope|
+        scope.set_tags(security_id: self.id)
+        scope.set_context("security", { id: self.id, provider_error: response.error.message })
+      end
     end
   end
 
