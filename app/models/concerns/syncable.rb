@@ -6,22 +6,31 @@ module Syncable
   end
 
   def syncing?
-    raise NotImplementedError, "Subclasses must implement the syncing? method"
+    syncs.visible.any?
   end
 
+  # Schedules a sync for syncable.  If there is an existing sync pending/syncing for this syncable,
+  # we do not create a new sync, and attempt to expand the sync window if needed.
   def sync_later(parent_sync: nil, window_start_date: nil, window_end_date: nil)
     Sync.transaction do
-      # Expire any previous in-flight syncs for this record that exceeded the
-      # global staleness window.
-      syncs.stale_candidates.find_each(&:mark_stale!)
+      with_lock do
+        sync = self.syncs.incomplete.first
 
-      new_sync = syncs.create!(
-        parent: parent_sync,
-        window_start_date: window_start_date,
-        window_end_date: window_end_date
-      )
+        if sync
+          Rails.logger.info("There is an existing sync, expanding window if needed (#{sync.id})")
+          sync.expand_window_if_needed(window_start_date, window_end_date)
+        else
+          sync = self.syncs.create!(
+            parent: parent_sync,
+            window_start_date: window_start_date,
+            window_end_date: window_end_date
+          )
 
-      SyncJob.perform_later(new_sync)
+          SyncJob.perform_later(sync)
+        end
+
+        sync
+      end
     end
   end
 
