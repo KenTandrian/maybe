@@ -61,18 +61,6 @@ class Account < ApplicationRecord
     end
   end
 
-  def syncing?
-    self_syncing = syncs.visible.any?
-
-    # Since Plaid Items sync as a "group", if the item is syncing, even if the account
-    # sync hasn't yet started (i.e. we're still fetching the Plaid data), show it as syncing in UI.
-    if linked?
-      plaid_account&.plaid_item&.syncing? || self_syncing
-    else
-      self_syncing
-    end
-  end
-
   def institution_domain
     url_string = plaid_account&.plaid_item&.institution_url
     return nil unless url_string.present?
@@ -94,7 +82,14 @@ class Account < ApplicationRecord
   end
 
   def current_holdings
-    holdings.where(currency: currency, date: holdings.maximum(:date)).order(amount: :desc)
+    holdings.where(currency: currency)
+            .where.not(qty: 0)
+            .where(
+              id: holdings.select("DISTINCT ON (security_id) id")
+                          .where(currency: currency)
+                          .order(:security_id, date: :desc)
+            )
+            .order(amount: :desc)
   end
 
   def update_with_sync!(attributes)

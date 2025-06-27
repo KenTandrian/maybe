@@ -35,15 +35,6 @@ class Family < ApplicationRecord
   validates :locale, inclusion: { in: I18n.available_locales.map(&:to_s) }
   validates :date_format, inclusion: { in: DATE_FORMATS.map(&:last) }
 
-  # If any accounts or plaid items are syncing, the family is also syncing, even if a formal "Family Sync" is not running.
-  def syncing?
-    Sync.joins("LEFT JOIN plaid_items ON plaid_items.id = syncs.syncable_id AND syncs.syncable_type = 'PlaidItem'")
-        .joins("LEFT JOIN accounts ON accounts.id = syncs.syncable_id AND syncs.syncable_type = 'Account'")
-        .where("syncs.syncable_id = ? OR accounts.family_id = ? OR plaid_items.family_id = ?", id, id, id)
-        .visible
-        .exists?
-  end
-
   def assigned_merchants
     merchant_ids = transactions.where.not(merchant_id: nil).pluck(:merchant_id).uniq
     Merchant.where(id: merchant_ids)
@@ -100,14 +91,25 @@ class Family < ApplicationRecord
     entries.order(:date).first&.date || Date.current
   end
 
-  # Cache key that is invalidated when any of the family's entries are updated (which affect rollups and other calculations)
-  def build_cache_key(key)
+  # Used for invalidating family / balance sheet related aggregation queries
+  def build_cache_key(key, invalidate_on_data_updates: false)
+    # Our data sync process updates this timestamp whenever any family account successfully completes a data update.
+    # By including it in the cache key, we can expire caches every time family account data changes.
+    data_invalidation_key = invalidate_on_data_updates ? latest_sync_completed_at : nil
+
     [
-      "family",
       id,
       key,
-      entries.maximum(:updated_at)
+      data_invalidation_key
     ].compact.join("_")
+  end
+
+  # Used for invalidating entry related aggregation queries
+  def entries_cache_version
+    @entries_cache_version ||= begin
+      ts = entries.maximum(:updated_at)
+      ts.present? ? ts.to_i : 0
+    end
   end
 
   def self_hoster?
