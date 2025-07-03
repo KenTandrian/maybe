@@ -6,13 +6,23 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
     @account = accounts(:depository)
   end
 
-  test "new" do
-    get new_account_path
-    assert_response :ok
+  test "should get index" do
+    get accounts_url
+    assert_response :success
   end
 
-  test "can sync an account" do
-    post sync_account_path(@account)
-    assert_redirected_to account_path(@account)
+  test "should sync account" do
+    post sync_account_url(@account)
+    assert_redirected_to account_url(@account)
+  end
+
+  test "should get chart" do
+    get chart_account_url(@account)
+    assert_response :success
+  end
+
+  test "should get sparkline" do
+    get sparkline_account_url(@account)
+    assert_response :success
   end
 end

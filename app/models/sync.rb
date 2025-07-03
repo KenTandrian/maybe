@@ -1,7 +1,7 @@
 class Sync < ApplicationRecord
-  # We run a cron that marks any syncs that have been running > 2 hours as "stale"
+  # We run a cron that marks any syncs that have not been resolved in 24 hours as "stale"
   # Syncs often become stale when new code is deployed and the worker restarts
-  STALE_AFTER = 2.hours
+  STALE_AFTER = 24.hours
 
   # The max time that a sync will show in the UI (after 5 minutes)
   VISIBLE_FOR = 5.minutes
@@ -19,8 +19,7 @@ class Sync < ApplicationRecord
   scope :incomplete, -> { where("syncs.status IN (?)", %w[pending syncing]) }
   scope :visible, -> { incomplete.where("syncs.created_at > ?", VISIBLE_FOR.ago) }
 
-  # In-flight records that have exceeded the allowed runtime
-  scope :stale_candidates, -> { incomplete.where("syncs.created_at < ?", STALE_AFTER.ago) }
+  after_commit :update_family_sync_timestamp
 
   validate :window_valid
 
@@ -32,13 +31,13 @@ class Sync < ApplicationRecord
     state :failed
     state :stale
 
-    after_all_transitions :log_status_change
+    after_all_transitions :handle_transition
 
-    event :start, after_commit: :report_warnings do
+    event :start, after_commit: :handle_start_transition do
       transitions from: :pending, to: :syncing
     end
 
-    event :complete do
+    event :complete, after_commit: :handle_completion_transition do
       transitions from: :syncing, to: :completed
     end
 
@@ -54,12 +53,18 @@ class Sync < ApplicationRecord
 
   class << self
     def clean
-      stale_candidates.find_each(&:mark_stale!)
+      incomplete.where("syncs.created_at < ?", STALE_AFTER.ago).find_each(&:mark_stale!)
     end
   end
 
   def perform
     Rails.logger.tagged("Sync", id, syncable_type, syncable_id) do
+      # This can happen on server restarts or if Sidekiq enqueues a duplicate job
+      unless may_start?
+        Rails.logger.warn("Sync #{id} is not in a valid state (#{aasm.from_state}) to start.  Skipping sync.")
+        return
+      end
+
       start!
 
       begin
@@ -96,6 +101,29 @@ class Sync < ApplicationRecord
 
     # If this sync has a parent, try to finalize it so the child status propagates up the chain.
     parent&.finalize_if_all_children_finalized
+  end
+
+  # If a sync is pending, we can adjust the window if new syncs are created with a wider window.
+  def expand_window_if_needed(new_window_start_date, new_window_end_date)
+    return unless pending?
+    return if self.window_start_date.nil? && self.window_end_date.nil? # already as wide as possible
+
+    earliest_start_date = if self.window_start_date && new_window_start_date
+      [ self.window_start_date, new_window_start_date ].min
+    else
+      nil
+    end
+
+    latest_end_date = if self.window_end_date && new_window_end_date
+      [ self.window_end_date, new_window_end_date ].max
+    else
+      nil
+    end
+
+    update(
+      window_start_date: earliest_start_date,
+      window_end_date: latest_end_date
+    )
   end
 
   private
@@ -137,9 +165,33 @@ class Sync < ApplicationRecord
       end
     end
 
+    def handle_start_transition
+      report_warnings
+    end
+
+    def handle_transition
+      log_status_change
+    end
+
+    def handle_completion_transition
+      family.touch(:latest_sync_completed_at)
+    end
+
     def window_valid
       if window_start_date && window_end_date && window_start_date > window_end_date
         errors.add(:window_end_date, "must be greater than window_start_date")
+      end
+    end
+
+    def update_family_sync_timestamp
+      family.touch(:latest_sync_activity_at)
+    end
+
+    def family
+      if syncable.is_a?(Family)
+        syncable
+      else
+        syncable.family
       end
     end
 end
