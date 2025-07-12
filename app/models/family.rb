@@ -1,5 +1,5 @@
 class Family < ApplicationRecord
-  include Syncable, AutoTransferMatchable
+  include PlaidConnectable, Syncable, AutoTransferMatchable, Subscribeable
 
   DATE_FORMATS = [
     [ "MM-DD-YYYY", "%m-%d-%Y" ],
@@ -15,7 +15,6 @@ class Family < ApplicationRecord
 
   has_many :users, dependent: :destroy
   has_many :accounts, dependent: :destroy
-  has_many :plaid_items, dependent: :destroy
   has_many :invitations, dependent: :destroy
 
   has_many :imports, dependent: :destroy
@@ -65,82 +64,8 @@ class Family < ApplicationRecord
     @income_statement ||= IncomeStatement.new(self)
   end
 
-  def sync_data(sync, start_date: nil)
-    update!(last_synced_at: Time.current)
-
-    Rails.logger.info("Syncing accounts for family #{id}")
-    accounts.manual.each do |account|
-      account.sync_later(start_date: start_date, parent_sync: sync)
-    end
-
-    Rails.logger.info("Syncing plaid items for family #{id}")
-    plaid_items.each do |plaid_item|
-      plaid_item.sync_later(start_date: start_date, parent_sync: sync)
-    end
-
-    Rails.logger.info("Applying rules for family #{id}")
-    rules.each do |rule|
-      rule.apply_later
-    end
-  end
-
-  def remove_syncing_notice!
-    broadcast_remove target: "syncing-notice"
-  end
-
-  def post_sync(sync)
-    auto_match_transfers!
-    broadcast_refresh
-  end
-
-  # If family has any syncs pending/syncing within the last hour, we show a persistent "syncing" notice.
-  # Ignore syncs older than 1 hour as they are considered "stale"
-  def syncing?
-    Sync.where(
-      "(syncable_type = 'Family' AND syncable_id = ?) OR
-       (syncable_type = 'Account' AND syncable_id IN (SELECT id FROM accounts WHERE family_id = ? AND plaid_account_id IS NULL)) OR
-       (syncable_type = 'PlaidItem' AND syncable_id IN (SELECT id FROM plaid_items WHERE family_id = ?))",
-      id, id, id
-    ).where(status: [ "pending", "syncing" ], created_at: 1.hour.ago..).exists?
-  end
-
   def eu?
     country != "US" && country != "CA"
-  end
-
-  def get_link_token(webhooks_url:, redirect_url:, accountable_type: nil, region: :us, access_token: nil)
-    provider = if region.to_sym == :eu
-      Provider::Registry.get_provider(:plaid_eu)
-    else
-      Provider::Registry.get_provider(:plaid_us)
-    end
-
-    # early return when no provider
-    return nil unless provider
-
-    provider.get_link_token(
-      user_id: id,
-      webhooks_url: webhooks_url,
-      redirect_url: redirect_url,
-      accountable_type: accountable_type,
-      access_token: access_token
-    ).link_token
-  end
-
-  def subscribed?
-    stripe_subscription_status == "active"
-  end
-
-  def trialing?
-    !subscribed? && trial_started_at.present? && trial_started_at <= 14.days.from_now
-  end
-
-  def trial_remaining_days
-    (14 - (Time.current - trial_started_at).to_i / 86400).to_i
-  end
-
-  def existing_customer?
-    stripe_customer_id.present?
   end
 
   def requires_data_provider?
@@ -162,26 +87,30 @@ class Family < ApplicationRecord
     requires_data_provider? && Provider::Registry.get_provider(:synth).nil?
   end
 
-  def primary_user
-    users.order(:created_at).first
-  end
-
   def oldest_entry_date
     entries.order(:date).first&.date || Date.current
   end
 
-  def active_accounts_count
-    accounts.active.count
-  end
+  # Used for invalidating family / balance sheet related aggregation queries
+  def build_cache_key(key, invalidate_on_data_updates: false)
+    # Our data sync process updates this timestamp whenever any family account successfully completes a data update.
+    # By including it in the cache key, we can expire caches every time family account data changes.
+    data_invalidation_key = invalidate_on_data_updates ? latest_sync_completed_at : nil
 
-  # Cache key that is invalidated when any of the family's entries are updated (which affect rollups and other calculations)
-  def build_cache_key(key)
     [
-      "family",
       id,
       key,
-      entries.maximum(:updated_at)
+      data_invalidation_key,
+      accounts.maximum(:updated_at)
     ].compact.join("_")
+  end
+
+  # Used for invalidating entry related aggregation queries
+  def entries_cache_version
+    @entries_cache_version ||= begin
+      ts = entries.maximum(:updated_at)
+      ts.present? ? ts.to_i : 0
+    end
   end
 
   def self_hoster?

@@ -14,28 +14,18 @@
                         data: { id: entry.id, "bulk-select-target": "row", action: "bulk-select#toggleRowSelection" } %>
 
         <div class="flex items-center gap-3">
-          <%= tag.div class: "w-6 h-6 rounded-full p-1.5 flex items-center justify-center", style: "color: #{color}" do %>
-            <%= icon(icon, size: "sm", color: "current") %>
-          <% end %>
+          <%= render FilledIconComponent.new(icon: icon, size: "sm", hex_color: color, rounded: true) %>
 
           <div class="truncate text-primary">
             <%= link_to entry.name,
                         entry_path(entry),
                         data: { turbo_frame: "drawer", turbo_prefetch: false },
-                        class: "hover:underline hover:text-gray-800" %>
+                        class: "hover:underline" %>
           </div>
         </div>
       </div>
 
-      <div class="col-span-2 justify-self-end font-medium text-sm">
-        <% if balance_trend&.trend %>
-          <%= tag.span format_money(balance_trend.trend.value), style: "color: #{balance_trend.trend.color}" %>
-        <% else %>
-          <%= tag.span "--", class: "text-gray-400" %>
-        <% end %>
-      </div>
-
-      <div class="col-span-2 justify-self-end">
+      <div class="col-span-4 justify-self-end">
         <%= tag.p format_money(entry.amount_money), class: "font-medium text-sm text-primary" %>
       </div>
     </div>

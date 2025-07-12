@@ -20,7 +20,6 @@
   }
   .pcr-color-palette{
       height: 12em !important;
-      width: 21.5rem !important;
   }
   .pcr-palette{
       border-radius: 10px !important;
@@ -40,7 +39,7 @@
 .combobox {
   .hw-combobox__main__wrapper,
   .hw-combobox__input {
-    @apply w-full;
+    @apply bg-container text-primary w-full;
   }
 
   .hw-combobox__main__wrapper {
@@ -53,6 +52,10 @@
 
   .hw-combobox__label {
     @apply block text-xs text-gray-500 peer-disabled:text-gray-400;
+  }
+  
+  .hw-combobox__option {
+    @apply bg-container hover:bg-container-hover;
   }
 
   .hw_combobox__pagination__wrapper {
@@ -71,18 +74,22 @@
 
 /* Typography */
 .prose {
-  @apply max-w-none;
+  @apply max-w-none text-primary; 
+
+  a {
+    @apply text-link;
+  }
 
   h2 {
-    @apply text-xl font-medium;
+    @apply text-xl font-medium text-primary;
   }
 
   h3 {
-    @apply text-lg font-medium;
+    @apply text-lg font-medium text-primary;
   }
 
   li {
-    @apply m-0;
+    @apply m-0 text-primary;
   }
 
   details {

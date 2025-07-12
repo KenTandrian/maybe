@@ -70,6 +70,7 @@ en:
         page_title: Security
     settings_nav:
       accounts_label: Accounts
+      api_key_label: API Key
       billing_label: Billing
       categories_label: Categories
       feedback_label: Feedback
@@ -80,6 +81,7 @@ en:
       other_section_title: More
       preferences_label: Preferences
       profile_label: Account
+      rules_label: Rules
       security_label: Security
       self_hosting_label: Self hosting
       tags_label: Tags

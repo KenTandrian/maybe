@@ -1,7 +1,7 @@
 module EntriesTestHelper
   def create_transaction(attributes = {})
-    entry_attributes = attributes.except(:category, :tags, :merchant)
-    transaction_attributes = attributes.slice(:category, :tags, :merchant)
+    entry_attributes = attributes.except(:category, :tags, :merchant, :kind)
+    transaction_attributes = attributes.slice(:category, :tags, :merchant, :kind)
 
     entry_defaults = {
       account: accounts(:depository),
@@ -28,20 +28,20 @@ module EntriesTestHelper
     Entry.create! entry_defaults.merge(attributes)
   end
 
-  def create_trade(security, account:, qty:, date:, price: nil)
+  def create_trade(security, account:, qty:, date:, price: nil, currency: "USD")
     trade_price = price || Security::Price.find_by!(security: security, date: date).price
 
     trade = Trade.new \
       qty: qty,
       security: security,
-      price:    trade_price,
-      currency: "USD"
+      price: trade_price,
+      currency: currency
 
     account.entries.create! \
       name: "Trade",
       date: date,
       amount: qty * trade_price,
-      currency: "USD",
+      currency: currency,
       entryable: trade
   end
 end

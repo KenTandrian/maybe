@@ -45,10 +45,6 @@ module ApplicationHelper
     content_for(:header_description) { page_description }
   end
 
-  def family_stream
-    turbo_stream_from Current.family if Current.family
-  end
-
   def page_active?(path)
     current_page?(path) || (request.path.start_with?(path) && path != "/")
   end
@@ -114,7 +110,13 @@ module ApplicationHelper
 
   private
     def calculate_total(item, money_method, negate)
-      items = item.reject { |i| i.respond_to?(:entryable) && i.entryable.transfer? }
+      # Filter out transfer-type transactions from entries
+      # Only Entry objects have entryable transactions, Account objects don't
+      items = item.reject do |i|
+        i.is_a?(Entry) &&
+        i.entryable.is_a?(Transaction) &&
+        i.entryable.transfer?
+      end
       total = items.sum(&money_method)
       negate ? -total : total
     end

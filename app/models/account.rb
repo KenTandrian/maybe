@@ -1,5 +1,6 @@
 class Account < ApplicationRecord
-  include Syncable, Monetizable, Chartable, Linkable, Convertible, Enrichable
+  include Syncable, Monetizable, Chartable, Linkable, Enrichable
+  include AASM
 
   validates :name, :balance, :currency, presence: true
 
@@ -18,7 +19,7 @@ class Account < ApplicationRecord
 
   enum :classification, { asset: "asset", liability: "liability" }, validate: { allow_nil: true }
 
-  scope :active, -> { where(is_active: true) }
+  scope :visible, -> { where(status: [ "draft", "active" ]) }
   scope :assets, -> { where(classification: "asset") }
   scope :liabilities, -> { where(classification: "liability") }
   scope :alphabetically, -> { order(:name) }
@@ -30,6 +31,30 @@ class Account < ApplicationRecord
 
   accepts_nested_attributes_for :accountable, update_only: true
 
+  # Account state machine
+  aasm column: :status, timestamps: true do
+    state :active, initial: true
+    state :draft
+    state :disabled
+    state :pending_deletion
+
+    event :activate do
+      transitions from: [ :draft, :disabled ], to: :active
+    end
+
+    event :disable do
+      transitions from: [ :draft, :active ], to: :disabled
+    end
+
+    event :enable do
+      transitions from: :disabled, to: :active
+    end
+
+    event :mark_for_deletion do
+      transitions from: [ :draft, :active, :disabled ], to: :pending_deletion
+    end
+  end
+
   class << self
     def create_and_sync(attributes)
       attributes[:accountable_attributes] ||= {} # Ensure accountable is created, even if empty
@@ -39,14 +64,14 @@ class Account < ApplicationRecord
       transaction do
         # Create 2 valuations for new accounts to establish a value history for users to see
         account.entries.build(
-          name: "Current Balance",
+          name: Valuation.build_current_anchor_name(account.accountable_type),
           date: Date.current,
           amount: account.balance,
           currency: account.currency,
           entryable: Valuation.new
         )
         account.entries.build(
-          name: "Initial Balance",
+          name: Valuation.build_opening_anchor_name(account.accountable_type),
           date: 1.day.ago.to_date,
           amount: initial_balance,
           currency: account.currency,
@@ -77,74 +102,34 @@ class Account < ApplicationRecord
   end
 
   def destroy_later
-    update!(scheduled_for_deletion: true, is_active: false)
+    mark_for_deletion!
     DestroyJob.perform_later(self)
   end
 
-  def sync_data(sync, start_date: nil)
-    update!(last_synced_at: Time.current)
-
-    Rails.logger.info("Processing balances (#{linked? ? 'reverse' : 'forward'})")
-    sync_balances
-  end
-
-  def post_sync(sync)
-    family.remove_syncing_notice!
-
-    accountable.post_sync(sync)
-
-    unless sync.child?
-      family.auto_match_transfers!
-    end
+  # Override destroy to handle error recovery for accounts
+  def destroy
+    super
+  rescue => e
+    # If destruction fails, transition back to disabled state
+    # This provides a cleaner recovery path than the generic scheduled_for_deletion flag
+    disable! if may_disable?
+    raise e
   end
 
   def current_holdings
-    holdings.where(currency: currency, date: holdings.maximum(:date)).order(amount: :desc)
+    holdings.where(currency: currency)
+            .where.not(qty: 0)
+            .where(
+              id: holdings.select("DISTINCT ON (security_id) id")
+                          .where(currency: currency)
+                          .order(:security_id, date: :desc)
+            )
+            .order(amount: :desc)
   end
 
-  def update_with_sync!(attributes)
-    should_update_balance = attributes[:balance] && attributes[:balance].to_d != balance
 
-    initial_balance = attributes.dig(:accountable_attributes, :initial_balance)
-    should_update_initial_balance = initial_balance && initial_balance.to_d != accountable.initial_balance
-
-    transaction do
-      update!(attributes)
-      update_balance!(attributes[:balance]) if should_update_balance
-      update_inital_balance!(attributes[:accountable_attributes][:initial_balance]) if should_update_initial_balance
-    end
-
-    sync_later
-  end
-
-  def update_balance!(balance)
-    valuation = entries.valuations.find_by(date: Date.current)
-
-    if valuation
-      valuation.update! amount: balance
-    else
-      entries.create! \
-        date: Date.current,
-        name: "Balance update",
-        amount: balance,
-        currency: currency,
-        entryable: Valuation.new
-    end
-  end
-
-  def update_inital_balance!(initial_balance)
-    valuation = first_valuation
-
-    if valuation
-      valuation.update! amount: initial_balance
-    else
-      entries.create! \
-        date: Date.current,
-        name: "Initial Balance",
-        amount: initial_balance,
-        currency: currency,
-        entryable: Valuation.new
-    end
+  def update_balance(balance:, date: Date.current, currency: nil, notes: nil)
+    Account::BalanceUpdater.new(self, balance:, currency:, date:, notes:).update
   end
 
   def start_date
@@ -174,10 +159,4 @@ class Account < ApplicationRecord
   def long_subtype_label
     accountable_class.long_subtype_label_for(subtype) || accountable_class.display_name
   end
-
-  private
-    def sync_balances
-      strategy = linked? ? :reverse : :forward
-      Balance::Syncer.new(self, strategy: strategy).sync_balances
-    end
 end

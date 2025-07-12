@@ -1,5 +1,5 @@
 class AccountsController < ApplicationController
-  before_action :set_account, only: %i[sync chart sparkline]
+  before_action :set_account, only: %i[sync chart sparkline toggle_active]
   include Periodable
 
   def index
@@ -23,15 +23,23 @@ class AccountsController < ApplicationController
   end
 
   def sparkline
-    render layout: false
+    etag_key = @account.family.build_cache_key("#{@account.id}_sparkline", invalidate_on_data_updates: true)
+
+    # Short-circuit with 304 Not Modified when the client already has the latest version.
+    # We defer the expensive series computation until we know the content is stale.
+    if stale?(etag: etag_key, last_modified: @account.family.latest_sync_completed_at)
+      @sparkline_series = @account.sparkline_series
+      render layout: false
+    end
   end
 
-  def sync_all
-    unless family.syncing?
-      family.sync_later
+  def toggle_active
+    if @account.active?
+      @account.disable!
+    elsif @account.disabled?
+      @account.enable!
     end
-
-    redirect_back_or_to accounts_path
+    redirect_to accounts_path
   end
 
   private
