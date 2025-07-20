@@ -2,17 +2,7 @@
   <h1 class="text-xl"><%= t(".accounts") %></h1>
   <div class="flex items-center gap-5">
     <div class="flex items-center gap-2">
-      <%= render ButtonComponent.new(
-        text: "Sync all",
-        href: sync_all_accounts_path,
-        method: :post,
-        variant: "outline",
-        disabled: Current.family.syncing?,
-        icon: "refresh-cw",
-        class: ""
-      ) %>
-
-      <%= render LinkComponent.new(
+      <%= render DS::Link.new(
         text: "New account",
         href: new_account_path(return_to: accounts_path),
         variant: "primary",

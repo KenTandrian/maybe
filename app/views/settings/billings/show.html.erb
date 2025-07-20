@@ -4,26 +4,28 @@
   <div class="space-y-4">
     <div class="p-3 shadow-border-xs bg-container rounded-lg flex justify-between items-center">
       <div class="flex items-center gap-3">
-        <%= render FilledIconComponent.new(
+        <%= render DS::FilledIcon.new(
           icon: "gem",
           rounded: true,
           size: "lg"
         ) %>
 
         <div class="text-sm space-y-1">
-          <% if subscription_pending? %>
+          <% if @family.has_active_subscription? %>
             <p class="text-primary">
-              Your subscription is pending. You can still use Maybe+ while we process your subscription.
+              <span>You are currently subscribed to the <span class="font-medium"><%= @family.subscription.name %></span>.</span>
+
+              <% if @family.next_billing_date %>
+                <span>Your plan renews on <span class="font-medium"><%= @family.next_billing_date.strftime("%B %d, %Y") %></span>.</span>
+              <% end %>
             </p>
-          <% elsif @user.family.trialing? %>
+          <% elsif @family.trialing? %>
             <p class="text-primary">
-              You are currently trialing <span class="font-medium">Maybe+</span>
+              You are currently trialing Maybe
               <span class="text-secondary">
-                (<%= @user.family.trial_remaining_days %> days remaining)
+                (<%= @family.days_left_in_trial %> days remaining)
               </span>
             </p>
-          <% elsif @user.family.subscribed? %>
-            <p class="text-primary">You are currently subscribed to <span class="font-medium">Maybe+</span></p>
           <% else %>
             <p class="text-primary">You are currently <span class="font-medium">not subscribed</span></p>
             <p class="text-secondary">Once you subscribe to Maybe+, you'll see your billing settings here.</p>
@@ -31,8 +33,8 @@
         </div>
       </div>
 
-      <% if @user.family.subscribed? %>
-        <%= render LinkComponent.new(
+      <% if @family.has_active_subscription? %>
+        <%= render DS::Link.new(
           text: "Manage",
           icon: "external-link",
           variant: "primary",
@@ -40,8 +42,8 @@
           href: subscription_path,
           rel: "noopener"
         ) %>
-      <% elsif @user.family.trialing? && !subscription_pending? %>
-        <%= render LinkComponent.new(
+      <% else %>
+        <%= render DS::Link.new(
           text: "Choose plan",
           variant: "primary",
           icon: "plus",

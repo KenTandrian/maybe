@@ -6,18 +6,30 @@ class AccountsControllerTest < ActionDispatch::IntegrationTest
     @account = accounts(:depository)
   end
 
-  test "new" do
-    get new_account_path
-    assert_response :ok
+  test "should get index" do
+    get accounts_url
+    assert_response :success
   end
 
-  test "can sync an account" do
-    post sync_account_path(@account)
-    assert_redirected_to account_path(@account)
+  test "should get show" do
+    get account_url(@account)
+    assert_response :success
   end
 
-  test "can sync all accounts" do
-    post sync_all_accounts_path
+  test "should sync account" do
+    post sync_account_url(@account)
+    assert_redirected_to account_url(@account)
+  end
+
+  test "should get sparkline" do
+    get sparkline_account_url(@account)
+    assert_response :success
+  end
+
+  test "destroys account" do
+    delete account_url(@account)
     assert_redirected_to accounts_path
+    assert_enqueued_with job: DestroyJob
+    assert_equal "Account scheduled for deletion", flash[:notice]
   end
 end

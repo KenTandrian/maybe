@@ -1,4 +1,4 @@
-<div id="<%= dom_id import %>" class="flex items-center justify-between mx-4 py-4 border-b last:border-b-0 border-alpha-black-50">
+<div id="<%= dom_id import %>" class="flex items-center justify-between mx-4 py-4">
 
   <div class="flex items-center gap-2 mb-1">
     <%= link_to import_path(import), class: "text-sm text-primary hover:underline" do %>
@@ -36,7 +36,7 @@
     <% end %>
   </div>
 
-  <%= render MenuComponent.new do |menu| %>
+  <%= render DS::Menu.new do |menu| %>
     <% menu.with_item(variant: "link", text: t(".view"), href: import_path(import), icon: "eye") %>
 
     <% if import.complete? || import.revert_failed? %>
@@ -59,7 +59,7 @@
         href: import_path(import),
         icon: "trash-2",
         method: :delete,
-        confirm: CustomConfirm.for_resource_deletion("Import")) %>
+        confirm: CustomConfirm.for_resource_deletion("import")) %>
     <% end %>
   <% end %>
 </div>

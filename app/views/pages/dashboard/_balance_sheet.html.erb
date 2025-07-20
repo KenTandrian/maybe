@@ -1,19 +1,20 @@
-<%# locals: (balance_sheet:) %>
+<%# locals: (balance_sheet:, **args) %>
 
-<div class="space-y-4 overflow-x-auto p-0.5">
+<div class="space-y-4" id="balance-sheet">
   <% balance_sheet.classification_groups.each do |classification_group| %>
     <div class="bg-container shadow-border-xs rounded-xl space-y-4 p-4">
-      <h2 class="text-lg font-medium inline-flex items-center gap-1.5">
-        <span>
-          <%= classification_group.display_name %>
-        </span>
+      <div class="flex items-center gap-2">
+        <h2 class="text-lg font-medium inline-flex items-center gap-1.5">
+          <span class="<%= "animate-pulse" if classification_group.syncing? %>">
+            <%= classification_group.name %>
+          </span>
 
-        <% if classification_group.account_groups.any? %>
-          <span class="text-secondary">&middot;</span>
-
-          <span class="text-secondary font-medium text-lg"><%= classification_group.total_money.format(precision: 0) %></span>
-        <% end %>
-      </h2>
+          <% if classification_group.account_groups.any? %>
+            <span class="text-secondary">&middot;</span>
+            <span class="text-secondary font-medium text-lg"><%= classification_group.total_money.format(precision: 0) %></span>
+          <% end %>
+        </h2>
+      </div>
 
       <% if classification_group.account_groups.any? %>
         <div class="space-y-4">
@@ -22,6 +23,7 @@
               <div class="h-1.5 rounded-sm" style="width: <%= account_group.weight %>%; background-color: <%= account_group.color %>;"></div>
             <% end %>
           </div>
+
           <div class="flex flex-wrap gap-4">
             <% classification_group.account_groups.each do |account_group| %>
               <div class="flex items-center gap-2 text-sm">
@@ -46,18 +48,21 @@
             </div>
           </div>
 
-          <div class="shadow-border-xs rounded-lg bg-container min-w-fit">
-            <% classification_group.account_groups.each do |account_group| %>
-              <details class="group rounded-lg open:bg-surface font-medium text-sm">
-                <summary class="cursor-pointer p-4 group-open:bg-surface bg-container rounded-lg flex items-center justify-between">
+          <div class="shadow-border-xs rounded-lg bg-container font-medium text-sm min-w-fit">
+            <% classification_group.account_groups.each_with_index do |account_group, idx| %>
+              <details class="group open:bg-surface
+                <%= idx == 0 ? "rounded-t-lg" : "" %>
+                <%= idx == classification_group.account_groups.size - 1 ? "rounded-b-lg" : "" %>
+              ">
+                <summary class="cursor-pointer p-4 group-open:bg-surface rounded-lg flex items-center justify-between">
                   <div class="w-40 shrink-0 flex items-center gap-4">
                     <%= icon("chevron-right", class: "group-open:rotate-90") %>
 
                     <p><%= account_group.name %></p>
                   </div>
 
-                  <div class="ml-auto flex items-center text-right gap-6">
-                    <div class="w-24 shrink-0 flex items-center justify-end gap-2">
+                  <div class="flex items-center justify-between text-right gap-6">
+                    <div class="w-28 shrink-0 flex items-center justify-end gap-2">
                       <%= render "pages/dashboard/group_weight", weight: account_group.weight, color: account_group.color %>
                     </div>
 
@@ -77,8 +82,13 @@
                       </div>
 
                       <div class="ml-auto flex items-center text-right gap-6">
-                        <div class="w-24 shrink-0 flex items-center justify-end gap-2">
-                          <%= render "pages/dashboard/group_weight", weight: account.weight, color: account_group.color %>
+                        <div class="w-28 shrink-0 flex items-center justify-end gap-2">
+                          <%
+                              # Calculate weight as percentage of classification total
+                              classification_total = classification_group.total_money.amount
+                              account_weight = classification_total.zero? ? 0 : account.converted_balance / classification_total * 100
+                          %>
+                          <%= render "pages/dashboard/group_weight", weight: account_weight, color: account_group.color %>
                         </div>
 
                         <div class="w-40 shrink-0">
@@ -88,28 +98,36 @@
                     </div>
 
                     <% if idx < account_group.accounts.size - 1 %>
-                      <div class="pl-[84px] pr-40">
-                        <div class="w-full border-subdued border-b"></div>
-                      </div>
+                      <%= render "shared/ruler", classes: "ml-21 mr-4" %>
                     <% end %>
                   <% end %>
                 </div>
               </details>
+              <% unless idx == classification_group.account_groups.size - 1 %>
+                <%= render "shared/ruler", classes: "mx-4 group-ruler" %>
+              <% end %>
             <% end %>
           </div>
         </div>
 
       <% else %>
         <div class="py-10 flex flex-col items-center">
-          <%= render FilledIconComponent.new(
+          <%= render DS::FilledIcon.new(
             variant: :container,
             icon: classification_group.icon,
           ) %>
 
-          <p class="text-primary text-sm font-medium mb-1 mt-4">No <%= classification_group.display_name %> yet</p>
-          <p class="text-secondary text-sm text-center"><%= "Add your #{classification_group.display_name} accounts to see a full breakdown" %></p>
+          <p class="text-primary text-sm font-medium mb-1 mt-4">No <%= classification_group.name %> yet</p>
+          <p class="text-secondary text-sm text-center"><%= "Add your #{classification_group.name} accounts to see a full breakdown" %></p>
         </div>
       <% end %>
     </div>
   <% end %>
 </div>
+
+<%# Custom style for hiding ruler when details are open %>
+<style>
+  details[open] + .group-ruler {
+    display: none;
+  }
+</style>

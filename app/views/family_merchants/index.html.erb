@@ -1,7 +1,7 @@
 <header class="flex items-center justify-between">
   <h1 class="text-primary text-xl font-medium">Merchants</h1>
 
-  <%= render LinkComponent.new(
+  <%= render DS::Link.new(
     text: "New merchant",
     variant: "primary",
     href: new_family_merchant_path,
@@ -9,18 +9,18 @@
   ) %>
 </header>
 
-<div class="bg-container shadow-border-xs rounded-xl p-4">
-  <% if @merchants.any? %>
+<div class="bg-container rounded-xl shadow-border-xs p-4">
+  <% if @family_merchants.any? %>
     <div class="rounded-xl bg-container-inset space-y-1 p-1">
       <div class="flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-secondary uppercase">
         <p><%= t(".title") %></p>
         <span class="text-subdued">&middot;</span>
-        <p><%= @merchants.count %></p>
+        <p><%= @family_merchants.count %></p>
       </div>
 
-      <div class="border border-alpha-black-25 rounded-md bg-container shadow-border-xs">
-        <div class="overflow-hidden rounded-md">
-          <%= render partial: "family_merchants/family_merchant", collection: @merchants, spacer_template: "family_merchants/ruler" %>
+      <div class="bg-container rounded-lg shadow-border-xs">
+        <div class="overflow-hidden rounded-lg">
+          <%= render partial: "family_merchants/family_merchant", collection: @family_merchants, spacer_template: "shared/ruler" %>
         </div>
       </div>
     </div>
@@ -29,7 +29,7 @@
       <div class="text-center flex flex-col items-center max-w-[300px]">
         <p class="text-primary mb-1 font-medium text-sm"><%= t(".empty") %></p>
 
-        <%= render LinkComponent.new(
+        <%= render DS::Link.new(
           text: t(".new"),
           icon: "plus",
           href: new_family_merchant_path,

@@ -5,6 +5,9 @@ class User < ApplicationRecord
   belongs_to :last_viewed_chat, class_name: "Chat", optional: true
   has_many :sessions, dependent: :destroy
   has_many :chats, dependent: :destroy
+  has_many :api_keys, dependent: :destroy
+  has_many :mobile_devices, dependent: :destroy
+  has_many :invitations, foreign_key: :inviter_id, dependent: :destroy
   has_many :impersonator_support_sessions, class_name: "ImpersonationSession", foreign_key: :impersonator_id, dependent: :destroy
   has_many :impersonated_support_sessions, class_name: "ImpersonationSession", foreign_key: :impersonated_id, dependent: :destroy
   accepts_nested_attributes_for :family, update_only: true
@@ -154,6 +157,10 @@ class User < ApplicationRecord
 
   def onboarded?
     onboarded_at.present?
+  end
+
+  def needs_onboarding?
+    !onboarded?
   end
 
   private

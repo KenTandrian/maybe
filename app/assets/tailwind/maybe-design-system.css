@@ -26,6 +26,11 @@
   --color-destructive: var(--color-red-600);
   --color-shadow: --alpha(var(--color-black) / 6%);
 
+  /* Colors used in Stimulus controllers with SVGs (easier to define light/dark mode here than toggle within the controllers) */
+  /* See @layer base block below for dark mode overrides */
+  --budget-unused-fill: var(--color-gray-200);
+  --budget-unallocated-fill: var(--color-gray-50);
+
   /* Gray scale */
   --color-gray-25: #FAFAFA;
   --color-gray-50: #F7F7F7;
@@ -235,7 +240,7 @@
     100% {
       stroke-dashoffset: 0;
     }
-  }
+  } 
 }
 
 /* Specific override for strong tags in prose under dark mode */
@@ -249,6 +254,10 @@
     --color-warning: var(--color-yellow-400);
     --color-destructive: var(--color-red-400);
     --color-shadow: --alpha(var(--color-white) / 8%);
+
+    /* Dark mode overrides for colors used in Stimulus controllers with SVGs */
+    --budget-unused-fill: var(--color-gray-500);
+    --budget-unallocated-fill: var(--color-gray-700);
 
     --shadow-xs: 0px 1px 2px 0px --alpha(var(--color-white) / 8%);
     --shadow-sm: 0px 1px 6px 0px --alpha(var(--color-white) / 8%);
@@ -325,12 +334,25 @@
     }
   }
 
+  /* New form field structure components */
+  .form-field__header {
+    @apply flex items-center justify-between gap-2;
+  }
+
+  .form-field__body {
+    @apply flex flex-col gap-1;
+  }
+
+  .form-field__actions {
+    @apply flex items-center gap-1;
+  }
+
   .form-field__label {
     @apply block text-xs text-secondary peer-disabled:text-subdued;
   }
 
   .form-field__input {
-    @apply text-primary border-none bg-transparent text-sm opacity-100 w-full p-0;
+    @apply text-primary border-none bg-container text-sm opacity-100 w-full p-0;
     @apply focus:opacity-100 focus:outline-hidden focus:ring-0;
     @apply placeholder-shown:opacity-50;
     @apply disabled:text-subdued;
@@ -338,18 +360,20 @@
     @apply transition-opacity duration-300;
     @apply placeholder:text-subdued;
 
-    &select {
-      @apply pr-8;
-    }
-
     @variant theme-dark {
       &::-webkit-calendar-picker-indicator {
         filter: invert(1);
         cursor: pointer;
       }
     }
-
-
+  }
+  
+  select.form-field__input {
+    @apply pr-10 appearance-none;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-position: right -0.15rem center;
+    background-repeat: no-repeat;
+    background-size: 1.25rem 1.25rem;
   }
 
   .form-field__radio {
@@ -418,9 +442,5 @@
     @variant theme-dark {
       fill: var(--color-white);
     }
-
   }
 }
-
-
-

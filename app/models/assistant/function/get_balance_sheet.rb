@@ -31,11 +31,11 @@ class Assistant::Function::GetBalanceSheet < Assistant::Function
         monthly_history: historical_data(period)
       },
       assets: {
-        current: family.balance_sheet.total_assets_money.format,
+        current: family.balance_sheet.assets.total_money.format,
         monthly_history: historical_data(period, classification: "asset")
       },
       liabilities: {
-        current: family.balance_sheet.total_liabilities_money.format,
+        current: family.balance_sheet.liabilities.total_money.format,
         monthly_history: historical_data(period, classification: "liability")
       },
       insights: insights_data
@@ -44,26 +44,29 @@ class Assistant::Function::GetBalanceSheet < Assistant::Function
 
   private
     def historical_data(period, classification: nil)
-      scope = family.accounts.active
+      scope = family.accounts.visible
       scope = scope.where(classification: classification) if classification.present?
 
       if period.start_date == Date.current
         []
       else
-        balance_series = scope.balance_series(
+        account_ids = scope.pluck(:id)
+
+        builder = Balance::ChartSeriesBuilder.new(
+          account_ids: account_ids,
           currency: family.currency,
           period: period,
-          interval: "1 month",
           favorable_direction: "up",
+          interval: "1 month"
         )
 
-        to_ai_time_series(balance_series)
+        to_ai_time_series(builder.balance_series)
       end
     end
 
     def insights_data
-      assets = family.balance_sheet.total_assets
-      liabilities = family.balance_sheet.total_liabilities
+      assets = family.balance_sheet.assets.total
+      liabilities = family.balance_sheet.liabilities.total
       ratio = liabilities.zero? ? 0 : (liabilities / assets.to_f)
 
       {

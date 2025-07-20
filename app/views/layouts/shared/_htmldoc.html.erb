@@ -23,14 +23,12 @@
         <%= render_flash_notifications %>
 
         <div id="cta"></div>
-
-        <% if Current.family&.syncing? %>
-          <%= render "shared/notifications/loading", id: "syncing-notice", message: "Syncing accounts data..." %>
-        <% end %>
       </div>
     </div>
 
-    <%= family_stream %>
+    <% if Current.family %>
+      <%= turbo_stream_from Current.family %>
+    <% end %>
 
     <%= turbo_frame_tag "modal" %>
     <%= turbo_frame_tag "drawer" %>

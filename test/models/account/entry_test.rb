@@ -17,7 +17,7 @@ class EntryTest < ActiveSupport::TestCase
     existing_valuation = entries :valuation
 
     new_valuation = Entry.new \
-      entryable: Valuation.new,
+      entryable: Valuation.new(kind: "reconciliation"),
       account: existing_valuation.account,
       date: existing_valuation.date, # invalid
       currency: existing_valuation.currency,
@@ -30,7 +30,7 @@ class EntryTest < ActiveSupport::TestCase
     prior_date = @entry.date - 1
     @entry.update! date: prior_date
 
-    @entry.account.expects(:sync_later).with(start_date: prior_date)
+    @entry.account.expects(:sync_later).with(window_start_date: prior_date)
     @entry.sync_account_later
   end
 
@@ -38,14 +38,14 @@ class EntryTest < ActiveSupport::TestCase
     prior_date = @entry.date
     @entry.update! date: @entry.date + 1
 
-    @entry.account.expects(:sync_later).with(start_date: prior_date)
+    @entry.account.expects(:sync_later).with(window_start_date: prior_date)
     @entry.sync_account_later
   end
 
   test "triggers sync with correct start date when transaction deleted" do
     @entry.destroy!
 
-    @entry.account.expects(:sync_later).with(start_date: nil)
+    @entry.account.expects(:sync_later).with(window_start_date: nil)
     @entry.sync_account_later
   end
 
@@ -67,21 +67,21 @@ class EntryTest < ActiveSupport::TestCase
     assert_equal 0, family.entries.search(params).size
   end
 
-  test "active scope only returns entries from active accounts" do
+  test "visible scope only returns entries from visible accounts" do
     # Create transactions for all account types
-    active_transaction = create_transaction(account: accounts(:depository), name: "Active transaction")
-    inactive_transaction = create_transaction(account: accounts(:credit_card), name: "Inactive transaction")
+    visible_transaction = create_transaction(account: accounts(:depository), name: "Visible transaction")
+    invisible_transaction = create_transaction(account: accounts(:credit_card), name: "Invisible transaction")
 
     # Update account statuses
-    accounts(:credit_card).update!(is_active: false)
+    accounts(:credit_card).disable!
 
     # Test the scope
-    active_entries = Entry.active
+    visible_entries = Entry.visible
 
     # Should include entry from active account
-    assert_includes active_entries, active_transaction
+    assert_includes visible_entries, visible_transaction
 
-    # Should not include entry from inactive account
-    assert_not_includes active_entries, inactive_transaction
+    # Should not include entry from disabled account
+    assert_not_includes visible_entries, invisible_transaction
   end
 end
