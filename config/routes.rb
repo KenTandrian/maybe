@@ -495,6 +495,8 @@ Rails.application.routes.draw do
     resources :users, only: [ :index, :update ]
   end
 
+  post "tasks/:queue_name", to: "tasks#run", as: :tasks
+
   # Defines the root path route ("/")
   root "pages#dashboard"
 end

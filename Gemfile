@@ -31,6 +31,7 @@ gem "lookbook", "2.3.11"
 gem "hotwire_combobox"
 
 # Background Jobs
+gem "google-cloud-tasks"
 gem "sidekiq"
 gem "sidekiq-cron"
 gem "sidekiq-unique-jobs"
