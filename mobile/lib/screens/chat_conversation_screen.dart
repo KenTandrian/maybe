@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:provider/provider.dart';
 import '../models/chat.dart';
 import '../providers/auth_provider.dart';
@@ -33,6 +34,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
 
   ChatProvider? _chatProvider;
   bool _listenerAdded = false;
+  bool _isSendInFlight = false;
 
   @override
   void initState() {
@@ -67,7 +69,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
   void _onChatChanged() {
     if (!mounted) return;
     final chatProvider = Provider.of<ChatProvider>(context, listen: false);
-    if (chatProvider.isWaitingForResponse || chatProvider.isSendingMessage) {
+    if (chatProvider.isWaitingForResponse || chatProvider.isSendingMessage || chatProvider.isPolling) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _scrollToBottom();
       });
@@ -119,9 +121,12 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
   }
 
   Future<void> _sendMessage() async {
+    if (_isSendInFlight) return;
     final content = _messageController.text.trim();
     if (content.isEmpty) return;
+    setState(() => _isSendInFlight = true);
 
+    try {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final chatProvider = Provider.of<ChatProvider>(context, listen: false);
 
@@ -181,6 +186,9 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
         );
       }
     });
+    } finally {
+      if (mounted) setState(() => _isSendInFlight = false);
+    }
   }
 
   Future<void> _editTitle() async {
@@ -358,7 +366,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                     actions: <Type, Action<Intent>>{
                       _SendMessageIntent: CallbackAction<_SendMessageIntent>(
                         onInvoke: (_) {
-                          if (!chatProvider.isSendingMessage) _sendMessage();
+                          if (!_isSendInFlight && !chatProvider.isSendingMessage && !chatProvider.isWaitingForResponse && !chatProvider.isPolling) _sendMessage();
                           return null;
                         },
                       ),
@@ -386,7 +394,7 @@ class _ChatConversationScreenState extends State<ChatConversationScreen> {
                         const SizedBox(width: 8),
                         IconButton(
                           icon: const Icon(Icons.send),
-                          onPressed: chatProvider.isSendingMessage
+                          onPressed: (_isSendInFlight || chatProvider.isSendingMessage || chatProvider.isWaitingForResponse || chatProvider.isPolling)
                               ? null
                               : _sendMessage,
                           color: colorScheme.primary,
@@ -413,6 +421,22 @@ class _MessageBubble extends StatelessWidget {
     required this.message,
     required this.formatTime,
   });
+
+  /// Builds the markdown stylesheet once per render context instead of inline,
+  /// avoiding redundant TextStyle allocations per message bubble.
+  MarkdownStyleSheet _markdownStyle(BuildContext context) {
+    final color = Theme.of(context).colorScheme.onSurfaceVariant;
+    return MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+      p: TextStyle(color: color),
+      strong: TextStyle(color: color, fontWeight: FontWeight.bold),
+      em: TextStyle(color: color, fontStyle: FontStyle.italic),
+      listBullet: TextStyle(color: color),
+      h1: TextStyle(color: color, fontSize: 20, fontWeight: FontWeight.bold),
+      h2: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.bold),
+      h3: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.bold),
+      code: TextStyle(color: color, fontFamily: 'monospace'),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -442,7 +466,8 @@ class _MessageBubble extends StatelessWidget {
               crossAxisAlignment:
                   isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
               children: [
-                Container(
+                SelectionArea(
+                  child: Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
@@ -454,14 +479,27 @@ class _MessageBubble extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        message.content,
-                        style: TextStyle(
-                          color: isUser
-                              ? colorScheme.onPrimary
-                              : colorScheme.onSurfaceVariant,
+                      if (isUser)
+                        Text(
+                          message.content,
+                          style: TextStyle(
+                            color: colorScheme.onPrimary,
+                          ),
+                        )
+                      else
+                        MarkdownBody(
+                          data: message.content,
+                          selectable: false,
+                          softLineBreak: true,
+                          styleSheet: _markdownStyle(context),
+                          sizedImageBuilder: (config) {
+                            // Block remote images to prevent unsolicited network requests.
+                            if (config.uri.scheme == 'http' || config.uri.scheme == 'https') {
+                              return const SizedBox.shrink();
+                            }
+                            return Image.asset(config.uri.toString());
+                          },
                         ),
-                      ),
                       if (message.toolCalls != null &&
                           message.toolCalls!.isNotEmpty)
                         Padding(
@@ -483,6 +521,7 @@ class _MessageBubble extends StatelessWidget {
                         ),
                     ],
                   ),
+                ),
                 ),
                 const SizedBox(height: 4),
                 Text(

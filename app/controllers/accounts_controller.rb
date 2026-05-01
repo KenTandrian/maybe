@@ -20,6 +20,7 @@ class AccountsController < ApplicationController
     @coinbase_items = visible_provider_items(family.coinbase_items.ordered.includes(:coinbase_accounts, :accounts, :syncs))
     @snaptrade_items = visible_provider_items(family.snaptrade_items.ordered.includes(:syncs, :snaptrade_accounts))
     @indexa_capital_items = visible_provider_items(family.indexa_capital_items.ordered.includes(:syncs, :indexa_capital_accounts))
+    @sophtron_items = visible_provider_items(family.sophtron_items.ordered.includes(:syncs, :sophtron_accounts))
 
     # Build sync stats maps for all providers
     build_sync_stats_maps
@@ -75,7 +76,7 @@ class AccountsController < ApplicationController
   end
 
   def sparkline
-    etag_key = @account.family.build_cache_key("#{@account.id}_sparkline", invalidate_on_data_updates: true)
+    etag_key = @account.family.build_cache_key("#{@account.id}_sparkline_#{Account::Chartable::SPARKLINE_CACHE_VERSION}", invalidate_on_data_updates: true)
 
     # Short-circuit with 304 Not Modified when the client already has the latest version.
     # We defer the expensive series computation until we know the content is stale.
@@ -113,8 +114,13 @@ class AccountsController < ApplicationController
     if @account.linked?
       redirect_to account_path(@account), alert: t("accounts.destroy.cannot_delete_linked")
     else
-      @account.destroy_later
-      redirect_to accounts_path, notice: t("accounts.destroy.success", type: @account.accountable_type)
+      begin
+        @account.destroy_later
+        redirect_to accounts_path, notice: t("accounts.destroy.success", type: @account.accountable_type)
+      rescue => e
+        Rails.logger.error "Failed to schedule account #{@account.id} for deletion: #{e.message}"
+        redirect_to accounts_path, alert: t("accounts.destroy.failed")
+      end
     end
   end
 
@@ -292,6 +298,13 @@ class AccountsController < ApplicationController
       @coinstats_items.each do |item|
         latest_sync = item.syncs.ordered.first
         @coinstats_sync_stats_map[item.id] = latest_sync&.sync_stats || {}
+      end
+
+      # Sophtron sync stats
+      @sophtron_sync_stats_map = {}
+      @sophtron_items.each do |item|
+        latest_sync = item.syncs.ordered.first
+        @sophtron_sync_stats_map[item.id] = latest_sync&.sync_stats || {}
       end
 
       # Mercury sync stats

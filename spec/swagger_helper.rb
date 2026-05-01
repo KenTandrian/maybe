@@ -64,6 +64,14 @@ RSpec.configure do |config|
               }
             }
           },
+          MfaRequiredResponse: {
+            type: :object,
+            required: %w[error mfa_required],
+            properties: {
+              error: { type: :string },
+              mfa_required: { type: :boolean }
+            }
+          },
           ToolCall: {
             type: :object,
             required: %w[id function_name function_arguments created_at],
@@ -175,19 +183,29 @@ RSpec.configure do |config|
             properties: {
               id: { type: :string, format: :uuid },
               name: { type: :string },
-              account_type: { type: :string }
+              account_type: { type: :string, nullable: true },
+              status: { type: :string }
             }
           },
           AccountDetail: {
             type: :object,
-            required: %w[id name balance currency classification account_type],
+            required: %w[id name balance balance_cents cash_balance cash_balance_cents currency classification account_type status created_at updated_at],
             properties: {
               id: { type: :string, format: :uuid },
               name: { type: :string },
               balance: { type: :string },
+              balance_cents: { type: :integer, description: 'Signed balance in minor currency units' },
+              cash_balance: { type: :string },
+              cash_balance_cents: { type: :integer, description: 'Signed cash balance in minor currency units' },
               currency: { type: :string },
               classification: { type: :string },
-              account_type: { type: :string }
+              account_type: { type: :string, nullable: true },
+              subtype: { type: :string, nullable: true },
+              status: { type: :string, enum: %w[active draft disabled pending_deletion] },
+              institution_name: { type: :string, nullable: true },
+              institution_domain: { type: :string, nullable: true },
+              created_at: { type: :string, format: :'date-time' },
+              updated_at: { type: :string, format: :'date-time' }
             }
           },
           AccountCollection: {
@@ -287,6 +305,83 @@ RSpec.configure do |config|
             type: :array,
             items: { '$ref' => '#/components/schemas/TagDetail' }
           },
+          RuleAction: {
+            type: :object,
+            required: %w[id action_type created_at updated_at],
+            properties: {
+              id: { type: :string, format: :uuid },
+              action_type: { type: :string },
+              value: { type: :string, nullable: true },
+              created_at: { type: :string, format: :'date-time' },
+              updated_at: { type: :string, format: :'date-time' }
+            }
+          },
+          RuleCondition: {
+            type: :object,
+            required: %w[id condition_type operator sub_conditions created_at updated_at],
+            properties: {
+              id: { type: :string, format: :uuid },
+              condition_type: { type: :string },
+              operator: { type: :string },
+              value: { type: :string, nullable: true },
+              sub_conditions: {
+                type: :array,
+                items: { '$ref' => '#/components/schemas/RuleCondition' }
+              },
+              created_at: { type: :string, format: :'date-time' },
+              updated_at: { type: :string, format: :'date-time' }
+            }
+          },
+          Rule: {
+            type: :object,
+            required: %w[id resource_type active conditions actions created_at updated_at],
+            properties: {
+              id: { type: :string, format: :uuid },
+              name: { type: :string, nullable: true },
+              resource_type: { type: :string, enum: %w[transaction] },
+              active: { type: :boolean },
+              effective_date: { type: :string, format: :date, nullable: true },
+              conditions: {
+                type: :array,
+                items: { '$ref' => '#/components/schemas/RuleCondition' }
+              },
+              actions: {
+                type: :array,
+                items: { '$ref' => '#/components/schemas/RuleAction' }
+              },
+              created_at: { type: :string, format: :'date-time' },
+              updated_at: { type: :string, format: :'date-time' }
+            }
+          },
+          RuleResponse: {
+            type: :object,
+            required: %w[data],
+            properties: {
+              data: { '$ref' => '#/components/schemas/Rule' }
+            }
+          },
+          RuleCollection: {
+            type: :object,
+            required: %w[data meta],
+            properties: {
+              data: {
+                type: :array,
+                items: { '$ref' => '#/components/schemas/Rule' }
+              },
+              meta: {
+                type: :object,
+                required: %w[current_page total_pages total_count per_page],
+                properties: {
+                  current_page: { type: :integer },
+                  next_page: { type: :integer, nullable: true },
+                  prev_page: { type: :integer, nullable: true },
+                  total_pages: { type: :integer },
+                  total_count: { type: :integer },
+                  per_page: { type: :integer }
+                }
+              }
+            }
+          },
           Transfer: {
             type: :object,
             required: %w[id amount currency],
@@ -344,6 +439,17 @@ RSpec.configure do |config|
               account: { '$ref' => '#/components/schemas/Account' },
               created_at: { type: :string, format: :'date-time' },
               updated_at: { type: :string, format: :'date-time' }
+            }
+          },
+          ValuationCollection: {
+            type: :object,
+            required: %w[valuations pagination],
+            properties: {
+              valuations: {
+                type: :array,
+                items: { '$ref' => '#/components/schemas/Valuation' }
+              },
+              pagination: { '$ref' => '#/components/schemas/Pagination' }
             }
           },
           DeleteResponse: {

@@ -333,7 +333,7 @@ class User < ApplicationRecord
   end
 
   def dashboard_two_column?
-    preferences&.dig("dashboard_two_column") != false
+    preferences&.dig("dashboard_two_column") == true
   end
 
   def update_transactions_preferences(prefs)
@@ -378,6 +378,10 @@ class User < ApplicationRecord
       if leaving_guest_role?
         self.show_sidebar = true unless show_sidebar
         self.show_ai_sidebar = true unless show_ai_sidebar
+      end
+
+      if new_record? && member? && !ai_available?
+        self.show_ai_sidebar = false
       end
     end
 
