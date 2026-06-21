@@ -124,14 +124,20 @@ class EnableBankingItem::Importer
 
   private
 
-    def handle_sync_error(exception)
+    # @param session_level [Boolean] true only for the top-level GET /sessions call.
+    #   A session-level 401/404 means the consent is genuinely dead and the user
+    #   must re-authorize. Per-account 401/404 (a stale account UID, a transient
+    #   hiccup on one account) must NOT mark the whole connection requires_update —
+    #   doing so is what made every sync report "session expired". Those are recorded
+    #   as ordinary sync errors and retried on the next sync.
+    def handle_sync_error(exception, session_level: false)
       # Check the underlying cause first, then the exception itself
       exceptions = [ exception.cause, exception ].compact
 
       provider_error = exceptions.find { |ex| ex.is_a?(Provider::EnableBanking::EnableBankingError) }
 
-      # Handle session expiration status update
-      if provider_error && [ :unauthorized, :not_found ].include?(provider_error.error_type)
+      # Handle session expiration status update (session-level failures only)
+      if session_level && provider_error && [ :unauthorized, :not_found ].include?(provider_error.error_type)
         enable_banking_item.update!(status: :requires_update)
         return I18n.t("enable_banking_items.errors.session_invalid")
       end
@@ -151,14 +157,18 @@ class EnableBankingItem::Importer
     end
 
     def fetch_session_data
-      enable_banking_provider.get_session(session_id: enable_banking_item.session_id)
+      session_data = enable_banking_provider.get_session(session_id: enable_banking_item.session_id)
+      # Keep the local expiry in sync with the authoritative value from the API so
+      # session_valid? doesn't drift (premature "expired" or stale "still valid").
+      enable_banking_item.reconcile_session_expiry!(session_data)
+      session_data
     rescue Provider::EnableBanking::EnableBankingError => e
       Rails.logger.error "EnableBankingItem::Importer - Enable Banking API error: #{e.message}"
-      @session_error = handle_sync_error(e)
+      @session_error = handle_sync_error(e, session_level: true)
       nil
     rescue => e
       Rails.logger.error "EnableBankingItem::Importer - Unexpected error fetching session: #{e.class} - #{e.message}"
-      @session_error = handle_sync_error(e)
+      @session_error = handle_sync_error(e, session_level: true)
       nil
     end
 
@@ -242,27 +252,43 @@ class EnableBankingItem::Importer
 
       pending_transactions = []
       if include_pending
-        # Also fetch pending transactions (visible for 1-3 days before they become BOOK) if setting is enabled
-        pending_transactions = fetch_paginated_transactions(
-          enable_banking_account,
-          start_date: start_date,
-          transaction_status: "PDNG",
-          psu_headers: enable_banking_item.build_psu_headers
-        )
+        # Also fetch pending transactions (visible for 1-3 days before they become BOOK) if setting is enabled.
+        # The BOOK fetch above used the same date_from/date_to and succeeded, so any 422 raised here is
+        # necessarily about the transaction_status param. Different ASPSPs reject it with different bodies
+        # (e.g. ImaginV2 returns WRONG_REQUEST_PARAMETERS; others mention "transactionStatus" verbatim),
+        # so we treat every validation_error on PDNG as "ASPSP doesn't support pending" and continue with
+        # the booked transactions only. (Issue #1805)
+        begin
+          pending_transactions = fetch_paginated_transactions(
+            enable_banking_account,
+            start_date: start_date,
+            transaction_status: "PDNG",
+            psu_headers: enable_banking_item.build_psu_headers
+          )
+        rescue Provider::EnableBanking::EnableBankingError => e
+          raise unless e.error_type == :validation_error
+          api_error = e.response_data.is_a?(Hash) ? (e.response_data[:error] || e.response_data["error"]) : nil
+          Rails.logger.warn "EnableBankingItem::Importer - ASPSP does not support PDNG transaction status for account #{enable_banking_account.uid}, skipping pending transactions. API error: #{api_error || e.message}"
+        end
       end
 
-      book_ids = all_transactions
-        .map { |tx| tx.with_indifferent_access[:transaction_id].presence }
+      book_fingerprints = all_transactions
+        .map { |tx| EnableBankingEntry::Processor.compute_external_id(tx) }
         .compact.to_set
 
+      # Also index all booked entry_references so a pending row that lacks
+      # transaction_id can still be matched when the settled BOOK row adds one
+      # (fingerprints differ; entry_reference stays the same across settlement).
       book_entry_refs = all_transactions
-        .select { |tx| tx.with_indifferent_access[:transaction_id].blank? }
         .map { |tx| tx.with_indifferent_access[:entry_reference].presence }
         .compact.to_set
 
       pending_transactions.reject! do |tx|
-        tx = tx.with_indifferent_access
-        tx[:transaction_id].present? ? book_ids.include?(tx[:transaction_id]) : book_entry_refs.include?(tx[:entry_reference].presence)
+        tx_ia = tx.with_indifferent_access
+        fp = EnableBankingEntry::Processor.compute_external_id(tx_ia)
+        entry_ref = tx_ia[:entry_reference].presence
+        (fp.present? && book_fingerprints.include?(fp)) ||
+          (entry_ref.present? && book_entry_refs.include?(entry_ref))
       end
 
       all_transactions = all_transactions + tag_as_pending(pending_transactions)
@@ -291,14 +317,17 @@ class EnableBankingItem::Importer
       if all_transactions.any?
 
         # C4: Remove stored PDNG entries that have now settled as BOOK.
-        # When a BOOK transaction arrives with the same transaction_id as a stored
-        # PDNG entry, the pending entry is stale — drop it to avoid duplicates.
-        book_ids = all_transactions
+        # Two match strategies run in parallel:
+        # 1. Fingerprint: covers same-ID rows and ID-less rows matched by content.
+        # 2. Entry-reference cross-match: covers the case where a pending row had
+        #    no transaction_id but the settled BOOK row gained one — fingerprints
+        #    diverge (enable_banking_<ref> vs enable_banking_<txn_id>) but the
+        #    shared entry_reference is a reliable settlement signal.
+        book_fingerprints = all_transactions
           .reject { |tx| tx.with_indifferent_access[:_pending] }
-          .map { |tx| tx.with_indifferent_access[:transaction_id].presence }
+          .map { |tx| EnableBankingEntry::Processor.compute_external_id(tx) }
           .compact.to_set
 
-        # Fallback: collect entry_references for BOOK rows that have no transaction_id
         book_entry_refs = all_transactions
           .reject { |tx| tx.with_indifferent_access[:_pending] }
           .map { |tx| tx.with_indifferent_access[:entry_reference].presence }
@@ -310,21 +339,20 @@ class EnableBankingItem::Importer
             pending_flag = tx.dig(:extra, :enable_banking, :pending) || tx[:_pending]
             next false unless pending_flag
 
-            tx[:transaction_id].present? ?
-              book_ids.include?(tx[:transaction_id]) :
-              book_entry_refs.include?(tx[:entry_reference].presence)
+            fp = EnableBankingEntry::Processor.compute_external_id(tx)
+            entry_ref = tx[:entry_reference].presence
+            (fp.present? && book_fingerprints.include?(fp)) ||
+              (entry_ref.present? && book_entry_refs.include?(entry_ref))
           end
         end
 
         existing_ids = existing_transactions.map { |tx|
-          tx = tx.with_indifferent_access
-          tx[:transaction_id].presence || tx[:entry_reference].presence
+          EnableBankingEntry::Processor.compute_external_id(tx)
         }.compact.to_set
 
         new_transactions = all_transactions.select do |tx|
-          # Use transaction_id if present, otherwise fall back to entry_reference
-          tx_id = tx[:transaction_id].presence || tx[:entry_reference].presence
-          tx_id.present? && !existing_ids.include?(tx_id)
+          ext_id = EnableBankingEntry::Processor.compute_external_id(tx)
+          ext_id.present? && !existing_ids.include?(ext_id)
         end
 
         if new_transactions.any? || removed_pending
@@ -398,7 +426,7 @@ class EnableBankingItem::Importer
     # omit transaction_id rarely produce such exact duplicates in the same
     # API response; timestamps or remittance info usually differ. (Issue #954)
     def build_transaction_content_key(tx)
-      date = tx[:booking_date].presence || tx[:value_date]
+      date = tx[:booking_date].presence || tx[:value_date].presence || tx[:transaction_date]
       amount = tx.dig(:transaction_amount, :amount).presence || tx[:amount]
       currency = tx.dig(:transaction_amount, :currency).presence || tx[:currency]
       creditor = tx.dig(:creditor, :name).presence || tx[:creditor_name]

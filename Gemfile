@@ -3,7 +3,7 @@ source "https://rubygems.org"
 ruby file: ".ruby-version"
 
 # Rails
-gem "rails", "~> 7.2.2"
+gem "rails", "~> 8.1.0"
 
 # Drivers
 gem "pg", "~> 1.5"
@@ -45,7 +45,11 @@ gem "sentry-rails"
 gem "sentry-sidekiq"
 gem "posthog-ruby"
 gem "logtail-rails"
-gem "skylight", groups: [ :production ]
+if ENV["SKYLIGHT_ENABLED"] == "true"
+  gem "skylight", group: :development, require: false
+else
+  gem "skylight", group: :production
+end
 
 # Active Storage
 gem "aws-sdk-s3", "~> 1.208.0", require: false
@@ -83,6 +87,7 @@ gem "snaptrade", "~> 2.0"
 gem "httparty"
 gem "rotp", "~> 6.3"
 gem "rqrcode", "~> 3.0"
+gem "webauthn", "~> 3.4"
 gem "activerecord-import"
 gem "rubyzip", "~> 2.3"
 gem "pdf-reader", "~> 2.12"
@@ -101,6 +106,7 @@ gem "after_commit_everywhere", "~> 1.0"
 
 # AI
 gem "ruby-openai"
+gem "anthropic", "~> 1.0"
 gem "langfuse-ruby", "~> 0.1.4", require: "langfuse"
 
 group :development, :test do

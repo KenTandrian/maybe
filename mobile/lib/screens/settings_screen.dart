@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
+import 'package:upgrader/upgrader.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../providers/auth_provider.dart';
 import '../providers/categories_provider.dart';
+import '../providers/merchants_provider.dart';
+import '../providers/tags_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/offline_storage_service.dart';
 import '../services/log_service.dart';
@@ -11,6 +14,10 @@ import '../services/biometric_service.dart';
 import '../services/preferences_service.dart';
 import '../services/user_service.dart';
 import 'log_viewer_screen.dart';
+import '../models/custom_proxy_header.dart';
+import '../services/api_config.dart';
+import '../services/custom_proxy_headers_service.dart';
+import '../widgets/custom_proxy_headers_editor.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -27,6 +34,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _biometricSupported = false;
   bool _biometricEnabled = false;
   bool _isTogglingBiometric = false;
+  List<CustomProxyHeader> _customHeaders = [];
+  bool _isCheckingForUpdate = false;
+  late final Upgrader _manualUpgrader;
+
+  String _displayInitial(String? displayName) {
+    final trimmed = displayName?.trim() ?? '';
+    return trimmed.isEmpty ? 'U' : trimmed[0].toUpperCase();
+  }
 
   @override
   void initState() {
@@ -34,6 +49,83 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadPreferences();
     _loadAppVersion();
     _loadBiometricState();
+    _loadCustomHeaders();
+    _manualUpgrader = Upgrader(
+      durationUntilAlertAgain: Duration.zero,
+      countryCode: 'us',
+    );
+  }
+
+  Future<void> _checkForUpdate() async {
+    if (_isCheckingForUpdate) return;
+    setState(() => _isCheckingForUpdate = true);
+    try {
+      await _manualUpgrader.initialize();
+      if (!mounted) {
+        _manualUpgrader.dispose();
+        return;
+      }
+      await _manualUpgrader.updateVersionInfo();
+      if (!mounted) return;
+
+      final available = _manualUpgrader.isUpdateAvailable();
+      final storeVersion = _manualUpgrader.versionInfo?.appStoreVersion?.toString();
+      final storeUrl = _manualUpgrader.versionInfo?.appStoreListingURL;
+
+      if (available) {
+        await _showUpdateDialog(storeVersion ?? 'a newer version', storeUrl);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("You're up to date!")),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Unable to check for updates')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isCheckingForUpdate = false);
+    }
+  }
+
+  Future<void> _showUpdateDialog(String version, String? storeUrl) async {
+    final launch = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Update available'),
+        content: Text('Version $version is available. Update now?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Later'),
+          ),
+          TextButton(
+            onPressed: storeUrl == null ? null : () => Navigator.pop(ctx, true),
+            child: const Text('Update now'),
+          ),
+        ],
+      ),
+    );
+
+    if (launch == true && storeUrl != null && mounted) {
+      final uri = Uri.tryParse(storeUrl);
+      final opened = uri != null
+          ? await launchUrl(uri, mode: LaunchMode.externalApplication)
+          : false;
+      if (!opened && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Unable to open store link')),
+        );
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _manualUpgrader.dispose();
+    super.dispose();
   }
 
   Future<void> _loadBiometricState() async {
@@ -78,7 +170,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (mounted) {
       final build = packageInfo.buildNumber;
       final display = build.isNotEmpty
-          ? '${packageInfo.version} (${build})'
+          ? '${packageInfo.version} ($build)'
           : packageInfo.version;
       setState(() => _appVersion = display);
     }
@@ -93,16 +185,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _loadCustomHeaders() async {
+    try {
+      final headers = await CustomProxyHeadersService.instance.loadHeaders();
+      if (mounted) {
+        setState(() => _customHeaders = headers);
+      }
+    } catch (e) {
+      LogService.instance.warning(
+        'SettingsScreen',
+        'Failed to load custom headers with ${e.runtimeType}',
+      );
+      // Keep the existing _customHeaders state so the screen remains usable.
+    }
+  }
+
   Future<void> _handleClearLocalData(BuildContext context) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Clear Local Data'),
         content: const Text(
-          'This will delete all locally cached transactions and accounts. '
-          'Your data on the server will not be affected. '
-          'Are you sure you want to continue?'
-        ),
+            'This will delete all locally cached transactions and accounts. '
+            'Your data on the server will not be affected. '
+            'Are you sure you want to continue?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -128,13 +234,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
         await offlineStorage.clearAllData();
         if (context.mounted) {
           Provider.of<CategoriesProvider>(context, listen: false).clear();
+          Provider.of<MerchantsProvider>(context, listen: false).clear();
+          Provider.of<TagsProvider>(context, listen: false).clear();
         }
         log.info('Settings', 'Local data cleared successfully');
 
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Local data cleared successfully. Pull to refresh to sync from server.'),
+              content: Text(
+                  'Local data cleared successfully. Pull to refresh to sync from server.'),
               backgroundColor: Colors.green,
               duration: Duration(seconds: 3),
             ),
@@ -142,14 +251,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         }
       } catch (e) {
         final log = LogService.instance;
-        log.error('Settings', 'Failed to clear local data: $e');
+        log.error(
+          'Settings',
+          'Failed to clear local data with ${e.runtimeType}',
+        );
 
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to clear local data: $e'),
+            const SnackBar(
+              content: Text('Failed to clear local data.'),
               backgroundColor: Colors.red,
-              duration: const Duration(seconds: 3),
+              duration: Duration(seconds: 3),
             ),
           );
         }
@@ -212,13 +324,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
         await OfflineStorageService().clearAllData();
         if (context.mounted) {
           Provider.of<CategoriesProvider>(context, listen: false).clear();
+          Provider.of<MerchantsProvider>(context, listen: false).clear();
+          Provider.of<TagsProvider>(context, listen: false).clear();
         }
 
         if (!context.mounted) return;
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Account reset has been initiated. This may take a moment.'),
+            content: Text(
+                'Account reset has been initiated. This may take a moment.'),
             backgroundColor: Colors.green,
           ),
         );
@@ -274,7 +389,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return;
       }
 
-      final result = await UserService().deleteAccount(accessToken: accessToken);
+      final result =
+          await UserService().deleteAccount(accessToken: accessToken);
 
       if (!context.mounted) return;
 
@@ -318,6 +434,84 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _showCustomHeadersDialog() async {
+    final formKey = GlobalKey<FormState>();
+    final latestHeaders =
+        await CustomProxyHeadersService.instance.loadHeaders();
+    if (!mounted) return;
+
+    setState(() => _customHeaders = latestHeaders);
+    var draftHeaders = List<CustomProxyHeader>.from(latestHeaders);
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Custom proxy headers'),
+          content: SingleChildScrollView(
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  CustomProxyHeadersEditor(
+                    initialHeaders: draftHeaders,
+                    onChanged: (headers) => draftHeaders = headers,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Headers are sent by the app with API requests. External browser SSO pages may not receive them.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (formKey.currentState?.validate() != true) return;
+                Navigator.pop(context, true);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (saved != true) return;
+
+    try {
+      await CustomProxyHeadersService.instance.saveHeaders(draftHeaders);
+      ApiConfig.setCustomProxyHeaders(draftHeaders);
+      if (!mounted) return;
+      setState(() => _customHeaders = draftHeaders);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Custom proxy headers saved')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      LogService.instance.warning(
+        'Settings',
+        'Failed to save custom proxy headers with ${e.runtimeType}',
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Failed to save custom proxy headers.'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -341,7 +535,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           radius: 30,
                           backgroundColor: colorScheme.primary,
                           child: Text(
-                            authProvider.user?.displayName[0].toUpperCase() ?? 'U',
+                            _displayInitial(authProvider.user?.displayName),
                             style: TextStyle(
                               fontSize: 24,
                               color: colorScheme.onPrimary,
@@ -356,9 +550,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             children: [
                               Text(
                                 authProvider.user?.displayName ?? 'User',
-                                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleLarge
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                    ),
                               ),
                               const SizedBox(height: 4),
                               Text(
@@ -393,6 +590,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
 
           ListTile(
+            leading: const Icon(Icons.system_update_outlined),
+            title: const Text('Check for updates'),
+            subtitle: const Text('See if a newer version is available'),
+            trailing: _isCheckingForUpdate
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.chevron_right),
+            onTap: _isCheckingForUpdate ? null : _checkForUpdate,
+          ),
+
+          ListTile(
             leading: const Icon(Icons.chat_bubble_outline),
             title: const Text('Contact us'),
             subtitle: Text(
@@ -415,7 +626,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const LogViewerScreen()),
+                  MaterialPageRoute(
+                      builder: (context) => const LogViewerScreen()),
                 );
               },
             ),
@@ -473,11 +685,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ],
                   selected: {themeProvider.themeMode},
-                  onSelectionChanged: (modes) => themeProvider.setThemeMode(modes.first),
+                  onSelectionChanged: (modes) =>
+                      themeProvider.setThemeMode(modes.first),
                   showSelectedIcon: false,
                 ),
               );
             },
+          ),
+
+          const Divider(),
+
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              'Connection',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey,
+              ),
+            ),
+          ),
+
+          ListTile(
+            leading: const Icon(Icons.http_outlined),
+            title: const Text('Custom proxy headers'),
+            subtitle: Text(
+              _customHeaders.isEmpty
+                  ? 'Optional headers for a reverse proxy or auth gateway'
+                  : '${_customHeaders.length} configured',
+            ),
+            onTap: _showCustomHeadersDialog,
           ),
 
           const Divider(),
@@ -505,7 +743,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           if (_biometricSupported) ...[
             const Divider(),
-
             const Padding(
               padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Text(
@@ -517,11 +754,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
             ),
-
             SwitchListTile(
               secondary: const Icon(Icons.fingerprint),
               title: const Text('Biometric Lock'),
-              subtitle: const Text('Require biometric authentication when resuming the app'),
+              subtitle: const Text(
+                  'Require biometric authentication when resuming the app'),
               value: _biometricEnabled,
               onChanged: _isTogglingBiometric ? null : _toggleBiometric,
             ),
@@ -549,10 +786,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
               'Delete all accounts, categories, merchants, and tags but keep your user account',
             ),
             trailing: _isResettingAccount
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2))
                 : null,
             enabled: !_isResettingAccount && !_isDeletingAccount,
-            onTap: _isResettingAccount || _isDeletingAccount ? null : () => _handleResetAccount(context),
+            onTap: _isResettingAccount || _isDeletingAccount
+                ? null
+                : () => _handleResetAccount(context),
           ),
 
           ListTile(
@@ -562,10 +804,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
               'Permanently remove all your data. This cannot be undone.',
             ),
             trailing: _isDeletingAccount
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2))
                 : null,
             enabled: !_isDeletingAccount && !_isResettingAccount,
-            onTap: _isDeletingAccount || _isResettingAccount ? null : () => _handleDeleteAccount(context),
+            onTap: _isDeletingAccount || _isResettingAccount
+                ? null
+                : () => _handleDeleteAccount(context),
           ),
 
           const Divider(),
